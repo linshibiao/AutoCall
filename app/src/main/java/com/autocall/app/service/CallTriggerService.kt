@@ -39,7 +39,12 @@ class CallTriggerService : Service() {
             -1L,
         ) ?: -1L
 
-        if (scheduledCallId < 0) {
+        val dayOfWeek = intent?.getIntExtra(
+            CallAlarmReceiver.EXTRA_DAY_OF_WEEK,
+            -1,
+        ) ?: -1
+
+        if (scheduledCallId < 0 || dayOfWeek < 0) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -64,7 +69,7 @@ class CallTriggerService : Service() {
 
         serviceScope.launch {
             try {
-                handleScheduledCall(scheduledCallId)
+                handleScheduledCall(scheduledCallId, dayOfWeek)
             } finally {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -84,10 +89,11 @@ class CallTriggerService : Service() {
         super.onDestroy()
     }
 
-    private suspend fun handleScheduledCall(scheduledCallId: Long) {
+    private suspend fun handleScheduledCall(scheduledCallId: Long, dayOfWeek: Int) {
         val dao = AppDatabase.getInstance(this).scheduledCallDao()
         val scheduledCall = dao.getById(scheduledCallId) ?: return
         if (!scheduledCall.isEnabled) return
+        if (!scheduledCall.days().contains(dayOfWeek)) return
 
         val placed = CallLauncher.placeCall(this, scheduledCall.phoneNumber)
         if (!placed) return
@@ -96,7 +102,7 @@ class CallTriggerService : Service() {
             enableSpeakerphoneAfterDelay()
         }
 
-        AlarmScheduler(this).scheduleCall(scheduledCall)
+        AlarmScheduler(this).scheduleCallDay(scheduledCall, dayOfWeek)
     }
 
     private fun enableSpeakerphoneAfterDelay() {
@@ -145,9 +151,10 @@ class CallTriggerService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val SPEAKERPHONE_DELAY_MS = 2_000L
 
-        fun start(context: Context, scheduledCallId: Long) {
+        fun start(context: Context, scheduledCallId: Long, dayOfWeek: Int) {
             val intent = Intent(context, CallTriggerService::class.java).apply {
                 putExtra(CallAlarmReceiver.EXTRA_SCHEDULED_CALL_ID, scheduledCallId)
+                putExtra(CallAlarmReceiver.EXTRA_DAY_OF_WEEK, dayOfWeek)
             }
             ContextCompat.startForegroundService(context, intent)
         }

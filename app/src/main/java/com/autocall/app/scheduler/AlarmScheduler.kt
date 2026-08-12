@@ -21,21 +21,33 @@ class AlarmScheduler(private val context: Context) {
     fun scheduleCall(scheduledCall: ScheduledCall): Boolean {
         if (!scheduledCall.isEnabled) return false
 
+        var scheduledAny = false
+        scheduledCall.days().forEach { dayOfWeek ->
+            if (scheduleCallDay(scheduledCall, dayOfWeek)) {
+                scheduledAny = true
+            }
+        }
+        return scheduledAny
+    }
+
+    fun scheduleCallDay(scheduledCall: ScheduledCall, dayOfWeek: Int): Boolean {
+        if (!scheduledCall.isEnabled) return false
+
         if (!PermissionHelper.canScheduleExactAlarms(context)) {
             Log.w(TAG, "Exact alarm permission missing; cannot schedule call ${scheduledCall.id}")
             return false
         }
 
         val triggerAtMillis = nextTriggerMillis(
-            dayOfWeek = scheduledCall.dayOfWeek,
+            dayOfWeek = dayOfWeek,
             hour = scheduledCall.hour,
             minute = scheduledCall.minute,
         )
 
-        val operationIntent = pendingIntentFor(scheduledCall.id)
+        val operationIntent = pendingIntentFor(scheduledCall.id, dayOfWeek)
         val showIntent = PendingIntent.getActivity(
             context,
-            scheduledCall.id.toInt(),
+            requestCode(scheduledCall.id, dayOfWeek),
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -54,33 +66,46 @@ class AlarmScheduler(private val context: Context) {
             }
             Log.d(
                 TAG,
-                "Scheduled call ${scheduledCall.id} for ${formatTriggerTime(triggerAtMillis)}",
+                "Scheduled call ${scheduledCall.id} on day $dayOfWeek for ${formatTriggerTime(triggerAtMillis)}",
             )
             true
         } catch (securityException: SecurityException) {
-            Log.e(TAG, "Failed to schedule call ${scheduledCall.id}", securityException)
+            Log.e(TAG, "Failed to schedule call ${scheduledCall.id} on day $dayOfWeek", securityException)
             false
         }
     }
 
+    fun cancelCall(scheduledCall: ScheduledCall) {
+        scheduledCall.days().forEach { dayOfWeek ->
+            cancelCallDay(scheduledCall.id, dayOfWeek)
+        }
+    }
+
     fun cancelCall(id: Long) {
-        alarmManager.cancel(pendingIntentFor(id))
+        for (dayOfWeek in Calendar.SUNDAY..Calendar.SATURDAY) {
+            cancelCallDay(id, dayOfWeek)
+        }
+    }
+
+    private fun cancelCallDay(id: Long, dayOfWeek: Int) {
+        alarmManager.cancel(pendingIntentFor(id, dayOfWeek))
     }
 
     suspend fun rescheduleAll(dao: ScheduledCallDao) {
         dao.getAllEnabled().forEach { scheduleCall(it) }
     }
 
-    private fun pendingIntentFor(scheduledCallId: Long): PendingIntent {
+    private fun pendingIntentFor(scheduledCallId: Long, dayOfWeek: Int): PendingIntent {
         val intent = Intent(context, CallAlarmReceiver::class.java).apply {
             action = CallAlarmReceiver.ACTION_TRIGGER_CALL
             putExtra(CallAlarmReceiver.EXTRA_SCHEDULED_CALL_ID, scheduledCallId)
+            putExtra(CallAlarmReceiver.EXTRA_DAY_OF_WEEK, dayOfWeek)
         }
 
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         return PendingIntent.getBroadcast(
             context,
-            scheduledCallId.toInt(),
+            requestCode(scheduledCallId, dayOfWeek),
             intent,
             flags,
         )
@@ -88,6 +113,9 @@ class AlarmScheduler(private val context: Context) {
 
     companion object {
         private const val TAG = "AlarmScheduler"
+
+        fun requestCode(scheduledCallId: Long, dayOfWeek: Int): Int =
+            (scheduledCallId.toInt() * 10) + dayOfWeek
 
         fun nextTriggerMillis(dayOfWeek: Int, hour: Int, minute: Int): Long {
             val now = Calendar.getInstance()
@@ -108,6 +136,11 @@ class AlarmScheduler(private val context: Context) {
 
             target.add(Calendar.DAY_OF_YEAR, daysUntil)
             return target.timeInMillis
+        }
+
+        fun nextTriggerMillis(days: Set<Int>, hour: Int, minute: Int): Long? {
+            if (days.isEmpty()) return null
+            return days.minOf { nextTriggerMillis(it, hour, minute) }
         }
 
         fun formatTriggerTime(triggerAtMillis: Long): String {

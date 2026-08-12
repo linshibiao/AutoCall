@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.util.ContactPickerHelper
 import com.autocall.app.util.DayOfWeekFormatter
+import com.autocall.app.util.DaysOfWeek
+import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -46,6 +48,9 @@ fun AddEditCallDialog(
 ) {
     val context = LocalContext.current
     val isEditing = existingCall != null
+    val defaultDays = remember {
+        setOf(Calendar.getInstance().get(Calendar.DAY_OF_WEEK))
+    }
 
     var contactName by remember(existingCall) {
         mutableStateOf(existingCall?.contactName.orEmpty())
@@ -53,8 +58,8 @@ fun AddEditCallDialog(
     var phoneNumber by remember(existingCall) {
         mutableStateOf(existingCall?.phoneNumber.orEmpty())
     }
-    var dayOfWeek by remember(existingCall) {
-        mutableIntStateOf(existingCall?.dayOfWeek ?: java.util.Calendar.MONDAY)
+    var selectedDays by remember(existingCall) {
+        mutableStateOf(existingCall?.days()?.takeIf { it.isNotEmpty() } ?: defaultDays)
     }
     var hour by remember(existingCall) {
         mutableIntStateOf(existingCall?.hour ?: 9)
@@ -114,15 +119,21 @@ fun AddEditCallDialog(
                     singleLine = true,
                 )
 
-                Text("Day of week")
+                Text("Days of week")
+                Text(
+                    text = "Select one or more days",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     DayOfWeekFormatter.allDays.forEach { (value, label) ->
                         FilterChip(
-                            selected = dayOfWeek == value,
-                            onClick = { dayOfWeek = value },
+                            selected = selectedDays.contains(value),
+                            onClick = {
+                                selectedDays = DaysOfWeek.toggle(selectedDays, value)
+                            },
                             label = { Text(label.take(3)) },
                         )
                     }
@@ -173,7 +184,7 @@ fun AddEditCallDialog(
                             id = existingCall?.id ?: 0L,
                             contactName = contactName,
                             phoneNumber = phoneNumber,
-                            dayOfWeek = dayOfWeek,
+                            daysOfWeek = selectedDays,
                             hour = hour,
                             minute = minute,
                             isEnabled = isEnabled,
@@ -181,7 +192,7 @@ fun AddEditCallDialog(
                         ),
                     )
                 },
-                enabled = phoneNumber.isNotBlank(),
+                enabled = phoneNumber.isNotBlank() && selectedDays.isNotEmpty(),
             ) {
                 Text("Save")
             }

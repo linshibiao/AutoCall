@@ -30,7 +30,7 @@ class ScheduledCallRepository(
     }
 
     suspend fun delete(scheduledCall: ScheduledCall) {
-        alarmScheduler.cancelCall(scheduledCall.id)
+        alarmScheduler.cancelCall(scheduledCall)
         dao.delete(scheduledCall)
     }
 

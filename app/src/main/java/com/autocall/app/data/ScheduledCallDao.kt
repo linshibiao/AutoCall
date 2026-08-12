@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ScheduledCallDao {
 
-    @Query("SELECT * FROM scheduled_calls ORDER BY dayOfWeek, hour, minute")
+    @Query("SELECT * FROM scheduled_calls ORDER BY daysOfWeek, hour, minute")
     fun getAll(): Flow<List<ScheduledCall>>
 
     @Query("SELECT * FROM scheduled_calls WHERE id = :id LIMIT 1")

@@ -2,6 +2,7 @@ package com.autocall.app.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.autocall.app.util.DaysOfWeek
 
 @Entity(tableName = "scheduled_calls")
 data class ScheduledCall(
@@ -9,10 +10,12 @@ data class ScheduledCall(
     val id: Long = 0,
     val contactName: String? = null,
     val phoneNumber: String,
-    /** Calendar day-of-week: 1 = Sunday … 7 = Saturday (matches [java.util.Calendar]). */
-    val dayOfWeek: Int,
+    /** Comma-separated Calendar day-of-week values: 1 = Sunday … 7 = Saturday. */
+    val daysOfWeek: String,
     val hour: Int,
     val minute: Int,
     val isEnabled: Boolean = true,
     val useSpeakerphone: Boolean = false,
-)
+) {
+    fun days(): Set<Int> = DaysOfWeek.parse(daysOfWeek)
+}

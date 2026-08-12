@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.data.ScheduledCallRepository
+import com.autocall.app.util.DaysOfWeek
 import com.autocall.app.util.PermissionHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -70,7 +71,7 @@ class AutoCallViewModel(
         val now = java.util.Calendar.getInstance()
         _editingCall.value = ScheduledCall(
             phoneNumber = "",
-            dayOfWeek = now.get(java.util.Calendar.DAY_OF_WEEK),
+            daysOfWeek = DaysOfWeek.encode(setOf(now.get(java.util.Calendar.DAY_OF_WEEK))),
             hour = now.get(java.util.Calendar.HOUR_OF_DAY),
             minute = now.get(java.util.Calendar.MINUTE),
         )
@@ -90,14 +91,14 @@ class AutoCallViewModel(
                 id = form.id,
                 contactName = form.contactName?.takeIf { it.isNotBlank() },
                 phoneNumber = form.phoneNumber.trim(),
-                dayOfWeek = form.dayOfWeek,
+                daysOfWeek = DaysOfWeek.encode(form.daysOfWeek),
                 hour = form.hour,
                 minute = form.minute,
                 isEnabled = form.isEnabled,
                 useSpeakerphone = form.useSpeakerphone,
             )
 
-            if (call.phoneNumber.isBlank()) return@launch
+            if (call.phoneNumber.isBlank() || call.days().isEmpty()) return@launch
 
             if (form.id == 0L) {
                 repository.insert(call)
@@ -125,7 +126,7 @@ data class ScheduledCallForm(
     val id: Long = 0,
     val contactName: String? = null,
     val phoneNumber: String = "",
-    val dayOfWeek: Int = java.util.Calendar.MONDAY,
+    val daysOfWeek: Set<Int> = setOf(java.util.Calendar.MONDAY),
     val hour: Int = 9,
     val minute: Int = 0,
     val isEnabled: Boolean = true,

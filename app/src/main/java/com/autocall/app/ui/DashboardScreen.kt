@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.scheduler.AlarmScheduler
 import com.autocall.app.util.DayOfWeekFormatter
+import com.autocall.app.util.DaysOfWeek
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,22 +169,24 @@ private fun ScheduledCallCard(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        text = "${DayOfWeekFormatter.label(scheduledCall.dayOfWeek)} at " +
+                        text = "${DaysOfWeek.formatShort(scheduledCall.days())} at " +
                             DayOfWeekFormatter.formatTime(scheduledCall.hour, scheduledCall.minute),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (scheduledCall.isEnabled) {
                         val nextTrigger = AlarmScheduler.nextTriggerMillis(
-                            scheduledCall.dayOfWeek,
+                            scheduledCall.days(),
                             scheduledCall.hour,
                             scheduledCall.minute,
                         )
-                        Text(
-                            text = "Next call: ${AlarmScheduler.formatTriggerTime(nextTrigger)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                        if (nextTrigger != null) {
+                            Text(
+                                text = "Next call: ${AlarmScheduler.formatTriggerTime(nextTrigger)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                     if (scheduledCall.useSpeakerphone) {
                         Text(

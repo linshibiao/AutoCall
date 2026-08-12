@@ -12,13 +12,17 @@ class CallAlarmReceiver : BroadcastReceiver() {
         val scheduledCallId = intent.getLongExtra(EXTRA_SCHEDULED_CALL_ID, -1L)
         if (scheduledCallId < 0) return
 
+        val dayOfWeek = intent.getIntExtra(EXTRA_DAY_OF_WEEK, -1)
+        if (dayOfWeek < 0) return
+
         if (!PermissionHelper.hasCallPhonePermission(context)) return
 
-        CallTriggerService.start(context, scheduledCallId)
+        CallTriggerService.start(context, scheduledCallId, dayOfWeek)
     }
 
     companion object {
         const val ACTION_TRIGGER_CALL = "com.autocall.app.ACTION_TRIGGER_CALL"
         const val EXTRA_SCHEDULED_CALL_ID = "extra_scheduled_call_id"
+        const val EXTRA_DAY_OF_WEEK = "extra_day_of_week"
     }
 }
