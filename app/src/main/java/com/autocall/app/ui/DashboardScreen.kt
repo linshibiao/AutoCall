@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autocall.app.data.ScheduledCall
+import com.autocall.app.scheduler.AlarmScheduler
 import com.autocall.app.util.DayOfWeekFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -172,6 +173,18 @@ private fun ScheduledCallCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (scheduledCall.isEnabled) {
+                        val nextTrigger = AlarmScheduler.nextTriggerMillis(
+                            scheduledCall.dayOfWeek,
+                            scheduledCall.hour,
+                            scheduledCall.minute,
+                        )
+                        Text(
+                            text = "Next call: ${AlarmScheduler.formatTriggerTime(nextTrigger)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     if (scheduledCall.useSpeakerphone) {
                         Text(
                             text = "Speakerphone enabled",

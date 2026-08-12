@@ -16,11 +16,14 @@ import kotlinx.coroutines.launch
 data class SystemStatus(
     val hasCallPhonePermission: Boolean = false,
     val hasReadContactsPermission: Boolean = false,
+    val hasNotificationPermission: Boolean = true,
     val canScheduleExactAlarms: Boolean = true,
     val isIgnoringBatteryOptimizations: Boolean = true,
 ) {
     val hasAllRuntimePermissions: Boolean
-        get() = hasCallPhonePermission && hasReadContactsPermission
+        get() = hasCallPhonePermission &&
+            hasReadContactsPermission &&
+            hasNotificationPermission
 
     val needsAttention: Boolean
         get() = !hasAllRuntimePermissions ||
@@ -50,17 +53,26 @@ class AutoCallViewModel(
         _systemStatus.value = SystemStatus(
             hasCallPhonePermission = PermissionHelper.hasCallPhonePermission(context),
             hasReadContactsPermission = PermissionHelper.hasReadContactsPermission(context),
+            hasNotificationPermission = PermissionHelper.hasNotificationPermission(context),
             canScheduleExactAlarms = PermissionHelper.canScheduleExactAlarms(context),
             isIgnoringBatteryOptimizations = PermissionHelper.isIgnoringBatteryOptimizations(context),
         )
+        if (_systemStatus.value.hasAllRuntimePermissions &&
+            _systemStatus.value.canScheduleExactAlarms
+        ) {
+            viewModelScope.launch {
+                repository.rescheduleAllEnabled()
+            }
+        }
     }
 
     fun startAddingCall() {
+        val now = java.util.Calendar.getInstance()
         _editingCall.value = ScheduledCall(
             phoneNumber = "",
-            dayOfWeek = java.util.Calendar.MONDAY,
-            hour = 9,
-            minute = 0,
+            dayOfWeek = now.get(java.util.Calendar.DAY_OF_WEEK),
+            hour = now.get(java.util.Calendar.HOUR_OF_DAY),
+            minute = now.get(java.util.Calendar.MINUTE),
         )
     }
 

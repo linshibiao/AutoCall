@@ -18,6 +18,25 @@ object PermissionHelper {
         Manifest.permission.READ_CONTACTS,
     )
 
+    fun notificationPermission(): String? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.POST_NOTIFICATIONS
+        } else {
+            null
+        }
+
+    fun allRuntimePermissions(): Array<String> {
+        val permissions = requiredRuntimePermissions.toMutableList()
+        notificationPermission()?.let { permissions.add(it) }
+        return permissions.toTypedArray()
+    }
+
+    fun hasNotificationPermission(context: Context): Boolean {
+        val permission = notificationPermission() ?: return true
+        return ContextCompat.checkSelfPermission(context, permission) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
     fun hasCallPhonePermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) ==
             PackageManager.PERMISSION_GRANTED

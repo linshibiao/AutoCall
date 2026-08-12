@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AutoCall</string>
+    <string name="notification_channel_name">Scheduled calls</string>
+    <string name="notification_channel_description">Notifications shown while AutoCall places a scheduled call</string>
+    <string name="notification_call_title">Placing scheduled call</string>
+    <string name="notification_call_text">AutoCall is starting your scheduled phone call</string>
+    <string name="next_call_prefix">Next call:</string>
 </resources>

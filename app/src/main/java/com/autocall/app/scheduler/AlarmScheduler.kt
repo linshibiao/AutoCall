@@ -5,9 +5,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
+import com.autocall.app.MainActivity
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.data.ScheduledCallDao
 import com.autocall.app.receiver.CallAlarmReceiver
+import com.autocall.app.util.PermissionHelper
 import java.util.Calendar
 
 class AlarmScheduler(private val context: Context) {
@@ -15,8 +18,13 @@ class AlarmScheduler(private val context: Context) {
     private val alarmManager: AlarmManager =
         context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
-    fun scheduleCall(scheduledCall: ScheduledCall) {
-        if (!scheduledCall.isEnabled) return
+    fun scheduleCall(scheduledCall: ScheduledCall): Boolean {
+        if (!scheduledCall.isEnabled) return false
+
+        if (!PermissionHelper.canScheduleExactAlarms(context)) {
+            Log.w(TAG, "Exact alarm permission missing; cannot schedule call ${scheduledCall.id}")
+            return false
+        }
 
         val triggerAtMillis = nextTriggerMillis(
             dayOfWeek = scheduledCall.dayOfWeek,
@@ -24,13 +32,35 @@ class AlarmScheduler(private val context: Context) {
             minute = scheduledCall.minute,
         )
 
-        val pendingIntent = pendingIntentFor(scheduledCall.id)
-
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            triggerAtMillis,
-            pendingIntent,
+        val operationIntent = pendingIntentFor(scheduledCall.id)
+        val showIntent = PendingIntent.getActivity(
+            context,
+            scheduledCall.id.toInt(),
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerAtMillis, showIntent)
+                alarmManager.setAlarmClock(alarmClockInfo, operationIntent)
+            } else {
+                @Suppress("DEPRECATION")
+                alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    operationIntent,
+                )
+            }
+            Log.d(
+                TAG,
+                "Scheduled call ${scheduledCall.id} for ${formatTriggerTime(triggerAtMillis)}",
+            )
+            true
+        } catch (securityException: SecurityException) {
+            Log.e(TAG, "Failed to schedule call ${scheduledCall.id}", securityException)
+            false
+        }
     }
 
     fun cancelCall(id: Long) {
@@ -57,12 +87,8 @@ class AlarmScheduler(private val context: Context) {
     }
 
     companion object {
+        private const val TAG = "AlarmScheduler"
 
-        /**
-         * Returns the next wall-clock time (in millis) for the given weekly schedule.
-         * If today's slot has not passed yet, returns today; otherwise rolls forward to
-         * the same weekday next week.
-         */
         fun nextTriggerMillis(dayOfWeek: Int, hour: Int, minute: Int): Long {
             val now = Calendar.getInstance()
             val target = Calendar.getInstance().apply {
@@ -82,6 +108,14 @@ class AlarmScheduler(private val context: Context) {
 
             target.add(Calendar.DAY_OF_YEAR, daysUntil)
             return target.timeInMillis
+        }
+
+        fun formatTriggerTime(triggerAtMillis: Long): String {
+            val calendar = Calendar.getInstance().apply { timeInMillis = triggerAtMillis }
+            val day = calendar.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, java.util.Locale.getDefault())
+            val hour = calendar.get(Calendar.HOUR_OF_DAY)
+            val minute = calendar.get(Calendar.MINUTE)
+            return "$day ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
         }
     }
 }
