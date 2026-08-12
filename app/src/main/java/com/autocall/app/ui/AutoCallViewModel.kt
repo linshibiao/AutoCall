@@ -7,10 +7,12 @@ import com.autocall.app.data.ScheduledCall
 import com.autocall.app.data.ScheduledCallRepository
 import com.autocall.app.util.DaysOfWeek
 import com.autocall.app.util.PermissionHelper
+import com.autocall.app.util.sortedByNextTrigger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -37,11 +39,13 @@ class AutoCallViewModel(
     private val repository: ScheduledCallRepository,
 ) : AndroidViewModel(application) {
 
-    val scheduledCalls = repository.scheduledCalls.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = emptyList(),
-    )
+    val scheduledCalls = repository.scheduledCalls
+        .map { calls -> calls.sortedByNextTrigger() }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList(),
+        )
 
     private val _systemStatus = MutableStateFlow(SystemStatus())
     val systemStatus: StateFlow<SystemStatus> = _systemStatus.asStateFlow()

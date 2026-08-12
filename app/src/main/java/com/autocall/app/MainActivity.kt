@@ -5,14 +5,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.autocall.app.ui.AutoCallApp
 import com.autocall.app.ui.AutoCallViewModel
 import com.autocall.app.ui.AutoCallViewModelFactory
+import com.autocall.app.ui.theme.AutoCallTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -21,9 +20,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            MaterialTheme(
-                colorScheme = lightColorScheme(),
-            ) {
+            AutoCallTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val viewModel: AutoCallViewModel = viewModel(
                         factory = AutoCallViewModelFactory(application),
