@@ -14,8 +14,8 @@ object SpeakerphoneHelper {
             val speaker = audioManager.availableCommunicationDevices.firstOrNull { device ->
                 device.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
             }
-            if (speaker != null && audioManager.setCommunicationDevice(speaker)) {
-                return
+            if (speaker != null) {
+                audioManager.setCommunicationDevice(speaker)
             }
         }
 

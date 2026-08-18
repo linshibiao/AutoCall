@@ -9,6 +9,12 @@ import com.autocall.app.data.AppSettings
 import com.autocall.app.data.RetrySettings
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.scheduler.AlarmScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Calendar
 import kotlin.math.abs
 
@@ -16,7 +22,10 @@ object CallRetryCoordinator {
 
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var monitor: CallStateMonitor? = null
+    private var speakerphoneJob: Job? = null
+    private var watchTimeoutJob: Job? = null
 
     fun restore(context: Context) {
         val appContext = context.applicationContext
@@ -54,6 +63,7 @@ object CallRetryCoordinator {
                     offHookAtMillis = null,
                     contactName = scheduledCall.contactName,
                     phoneNumber = scheduledCall.phoneNumber,
+                    useSpeakerphone = scheduledCall.useSpeakerphone,
                 ),
             )
             ensureMonitorLocked(appContext)
@@ -62,32 +72,58 @@ object CallRetryCoordinator {
 
     fun onCallPlaced(context: Context) {
         val appContext = context.applicationContext
+        val timeoutSeconds: Int
+        val sessionId: Long
+        val placedAt: Long
         synchronized(lock) {
             val session = CallWatchStore.load(appContext) ?: return
+            val placedAtMillis = System.currentTimeMillis()
             CallWatchStore.save(
                 appContext,
                 session.copy(
                     phase = CallWatchPhase.WAITING_OFFHOOK,
-                    placedAtMillis = System.currentTimeMillis(),
+                    placedAtMillis = placedAtMillis,
                     offHookAtMillis = null,
                 ),
             )
             ensureMonitorLocked(appContext)
+            val settings = AppSettings(appContext).getRetrySettings()
+            timeoutSeconds = session.expectedDurationSeconds + settings.durationToleranceSeconds + 15
+            sessionId = session.scheduledCallId
+            placedAt = placedAtMillis
         }
+        startWatchTimeout(appContext, sessionId, placedAt, timeoutSeconds)
     }
 
     fun onPlacementFailed(context: Context) {
-        evaluateEndedCall(context.applicationContext, actualDurationSeconds = 0)
+        val appContext = context.applicationContext
+        synchronized(lock) {
+            val session = CallWatchStore.load(appContext) ?: return
+            if (session.phase == CallWatchPhase.RETRY_PENDING) {
+                CallWatchStore.save(
+                    appContext,
+                    session.copy(phase = CallWatchPhase.WAITING_OFFHOOK),
+                )
+            }
+        }
+        evaluateEndedCall(appContext, actualDurationSeconds = 0)
     }
 
     fun abort(context: Context) {
         val appContext = context.applicationContext
         synchronized(lock) {
-            CallWatchStore.load(appContext)?.let { session ->
+            val session = CallWatchStore.load(appContext)
+            if (session != null) {
                 AlarmScheduler(appContext).cancelRetry(session.scheduledCallId)
             }
+            stopSpeakerphoneLocked()
+            stopWatchTimeoutLocked()
             stopMonitorLocked()
             CallWatchStore.clear(appContext)
+            if (session != null && session.retryAttempt > 0) {
+                FailureNotifier.show(appContext, session)
+                Log.w(TAG, "Aborted call ${session.scheduledCallId} after retries; notified user")
+            }
         }
     }
 
@@ -118,6 +154,7 @@ object CallRetryCoordinator {
                             ),
                         )
                         Log.d(TAG, "Call ${session.scheduledCallId} went off-hook")
+                        startSpeakerphoneLocked(appContext, session)
                     }
                     null
                 }
@@ -125,14 +162,18 @@ object CallRetryCoordinator {
                 TelephonyManager.CALL_STATE_IDLE -> {
                     when (session.phase) {
                         CallWatchPhase.IN_CALL -> {
+                            stopSpeakerphoneLocked()
+                            stopWatchTimeoutLocked()
                             val startedAt = session.offHookAtMillis ?: session.placedAtMillis
                             ((now - startedAt) / 1_000L).toInt().coerceAtLeast(0)
                         }
 
                         CallWatchPhase.WAITING_OFFHOOK -> {
+                            stopSpeakerphoneLocked()
                             if (now - session.placedAtMillis < STALE_IDLE_GRACE_MS) {
                                 null
                             } else {
+                                stopWatchTimeoutLocked()
                                 0
                             }
                         }
@@ -168,6 +209,8 @@ object CallRetryCoordinator {
 
             if (withinWindow) {
                 AlarmScheduler(appContext).cancelRetry(session.scheduledCallId)
+                stopSpeakerphoneLocked()
+                stopWatchTimeoutLocked()
                 stopMonitorLocked()
                 CallWatchStore.clear(appContext)
                 Log.d(TAG, "Call ${session.scheduledCallId} matched expected duration")
@@ -203,10 +246,53 @@ object CallRetryCoordinator {
 
     private fun giveUpLocked(appContext: Context, session: CallWatchSession, reason: String) {
         AlarmScheduler(appContext).cancelRetry(session.scheduledCallId)
+        stopSpeakerphoneLocked()
+        stopWatchTimeoutLocked()
         stopMonitorLocked()
         CallWatchStore.clear(appContext)
         FailureNotifier.show(appContext, session)
         Log.w(TAG, "Giving up on call ${session.scheduledCallId}: $reason")
+    }
+
+    private fun startWatchTimeout(
+        context: Context,
+        scheduledCallId: Long,
+        placedAtMillis: Long,
+        timeoutSeconds: Int,
+    ) {
+        watchTimeoutJob?.cancel()
+        watchTimeoutJob = scope.launch {
+            delay(timeoutSeconds.coerceAtLeast(15) * 1_000L)
+            val current = synchronized(lock) { CallWatchStore.load(context) } ?: return@launch
+            if (current.scheduledCallId != scheduledCallId) return@launch
+            if (current.placedAtMillis != placedAtMillis) return@launch
+            if (current.phase != CallWatchPhase.WAITING_OFFHOOK) return@launch
+            Log.w(TAG, "Call ${current.scheduledCallId} never connected; treating as failed")
+            evaluateEndedCall(context, actualDurationSeconds = 0)
+        }
+    }
+
+    private fun stopWatchTimeoutLocked() {
+        watchTimeoutJob?.cancel()
+        watchTimeoutJob = null
+    }
+
+    private fun startSpeakerphoneLocked(context: Context, session: CallWatchSession) {
+        if (!session.useSpeakerphone) return
+        val appContext = context.applicationContext
+        speakerphoneJob?.cancel()
+        speakerphoneJob = scope.launch {
+            repeat(SPEAKERPHONE_RETRY_COUNT) {
+                SpeakerphoneHelper.enable(appContext)
+                delay(SPEAKERPHONE_RETRY_DELAY_MS)
+            }
+            SpeakerphoneHelper.enable(appContext)
+        }
+    }
+
+    private fun stopSpeakerphoneLocked() {
+        speakerphoneJob?.cancel()
+        speakerphoneJob = null
     }
 
     private fun isPastRetryDeadline(
@@ -271,7 +357,9 @@ object CallRetryCoordinator {
     }
 
     private const val TAG = "CallRetryCoordinator"
-    private const val RETRY_DELAY_MS = 2_000L
+    private const val RETRY_DELAY_MS = 3_000L
     private const val STALE_IDLE_GRACE_MS = 1_500L
     private const val TWELVE_HOURS_MS = 12 * 60 * 60 * 1000L
+    private const val SPEAKERPHONE_RETRY_COUNT = 6
+    private const val SPEAKERPHONE_RETRY_DELAY_MS = 1_000L
 }

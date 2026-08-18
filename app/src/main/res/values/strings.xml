@@ -7,7 +7,11 @@
     <string name="notification_call_text">AutoCall is starting your scheduled phone call</string>
     <string name="notification_alert_channel_name">Call alerts</string>
     <string name="notification_alert_channel_description">Alerts when a scheduled call may have failed</string>
-    <string name="notification_retry_failed_title">Scheduled call may have failed</string>
-    <string name="notification_retry_failed_text">The call to %1$s did not last the expected duration.</string>
+    <string name="notification_retry_failed_title">Call to %1$s failed</string>
+    <string name="notification_retry_failed_summary">Scheduled for %1$s</string>
+    <string name="notification_retry_failed_text">Contact: %1$s\nNumber: %2$s\nScheduled time: %3$s\nThe call did not last the expected duration after %4$d retries.</string>
+    <string name="notification_retry_failed_text_unknown">Number: %1$s\nScheduled time: %2$s\nThe call did not last the expected duration after %3$d retries.</string>
+    <string name="notification_retry_failed_text_no_retry">Contact: %1$s\nNumber: %2$s\nScheduled time: %3$s\nThe call did not last the expected duration.</string>
+    <string name="notification_retry_failed_text_unknown_no_retry">Number: %1$s\nScheduled time: %2$s\nThe call did not last the expected duration.</string>
     <string name="next_call_prefix">Next call:</string>
 </resources>

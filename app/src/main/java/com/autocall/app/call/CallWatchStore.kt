@@ -19,6 +19,7 @@ data class CallWatchSession(
     val offHookAtMillis: Long?,
     val contactName: String?,
     val phoneNumber: String,
+    val useSpeakerphone: Boolean,
 )
 
 object CallWatchStore {
@@ -46,6 +47,7 @@ object CallWatchStore {
             offHookAtMillis = prefs.getLong(KEY_OFFHOOK_AT, -1L).takeIf { it >= 0 },
             contactName = prefs.getString(KEY_CONTACT_NAME, null),
             phoneNumber = prefs.getString(KEY_PHONE_NUMBER, "").orEmpty(),
+            useSpeakerphone = prefs.getBoolean(KEY_USE_SPEAKERPHONE, false),
         )
     }
 
@@ -61,11 +63,12 @@ object CallWatchStore {
             .putLong(KEY_OFFHOOK_AT, session.offHookAtMillis ?: -1L)
             .putString(KEY_CONTACT_NAME, session.contactName)
             .putString(KEY_PHONE_NUMBER, session.phoneNumber)
-            .apply()
+            .putBoolean(KEY_USE_SPEAKERPHONE, session.useSpeakerphone)
+            .commit()
     }
 
     fun clear(context: Context) {
-        prefs(context).edit().clear().apply()
+        prefs(context).edit().clear().commit()
     }
 
     private fun prefs(context: Context) =
@@ -82,4 +85,5 @@ object CallWatchStore {
     private const val KEY_OFFHOOK_AT = "offhook_at"
     private const val KEY_CONTACT_NAME = "contact_name"
     private const val KEY_PHONE_NUMBER = "phone_number"
+    private const val KEY_USE_SPEAKERPHONE = "use_speakerphone"
 }

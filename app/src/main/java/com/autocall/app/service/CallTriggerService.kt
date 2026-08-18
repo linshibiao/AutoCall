@@ -74,13 +74,7 @@ class CallTriggerService : Service() {
             try {
                 handleScheduledCall(scheduledCallId, dayOfWeek, retryAttempt)
             } finally {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                }
-                stopSelf()
+                stopSelf(startId)
             }
         }
 
@@ -89,6 +83,12 @@ class CallTriggerService : Service() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
         super.onDestroy()
     }
 

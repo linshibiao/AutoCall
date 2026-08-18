@@ -18,6 +18,11 @@ class PhoneStateReceiver : BroadcastReceiver() {
             else -> return
         }
 
-        CallRetryCoordinator.onPhoneState(context, state)
+        val pendingResult = goAsync()
+        try {
+            CallRetryCoordinator.onPhoneState(context, state)
+        } finally {
+            pendingResult.finish()
+        }
     }
 }
