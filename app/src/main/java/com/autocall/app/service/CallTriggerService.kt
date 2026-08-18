@@ -8,16 +8,14 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioManager
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.autocall.app.MainActivity
 import com.autocall.app.R
 import com.autocall.app.call.CallLauncher
+import com.autocall.app.call.SpeakerphoneHelper
 import com.autocall.app.data.AppDatabase
 import com.autocall.app.receiver.CallAlarmReceiver
 import com.autocall.app.scheduler.AlarmScheduler
@@ -25,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class CallTriggerService : Service() {
@@ -95,22 +94,26 @@ class CallTriggerService : Service() {
         if (!scheduledCall.isEnabled) return
         if (!scheduledCall.days().contains(dayOfWeek)) return
 
-        val placed = CallLauncher.placeCall(this, scheduledCall.phoneNumber)
+        val placed = CallLauncher.placeCall(
+            this,
+            scheduledCall.phoneNumber,
+            scheduledCall.useSpeakerphone,
+        )
         if (!placed) return
 
-        if (scheduledCall.useSpeakerphone) {
-            enableSpeakerphoneAfterDelay()
-        }
-
         AlarmScheduler(this).scheduleCallDay(scheduledCall, dayOfWeek)
+
+        if (scheduledCall.useSpeakerphone) {
+            enableSpeakerphoneWithRetries()
+        }
     }
 
-    private fun enableSpeakerphoneAfterDelay() {
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        Handler(Looper.getMainLooper()).postDelayed({
-            @Suppress("DEPRECATION")
-            audioManager.isSpeakerphoneOn = true
-        }, SPEAKERPHONE_DELAY_MS)
+    private suspend fun enableSpeakerphoneWithRetries() {
+        SpeakerphoneHelper.enable(this)
+        repeat(SPEAKERPHONE_RETRY_COUNT) {
+            delay(SPEAKERPHONE_RETRY_DELAY_MS)
+            SpeakerphoneHelper.enable(this)
+        }
     }
 
     private fun buildNotification(): Notification {
@@ -149,7 +152,8 @@ class CallTriggerService : Service() {
     companion object {
         const val CHANNEL_ID = "autocall_trigger"
         private const val NOTIFICATION_ID = 1001
-        private const val SPEAKERPHONE_DELAY_MS = 2_000L
+        private const val SPEAKERPHONE_RETRY_COUNT = 5
+        private const val SPEAKERPHONE_RETRY_DELAY_MS = 1_500L
 
         fun start(context: Context, scheduledCallId: Long, dayOfWeek: Int) {
             val intent = Intent(context, CallTriggerService::class.java).apply {
