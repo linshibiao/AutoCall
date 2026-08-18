@@ -85,6 +85,12 @@ fun AddEditCallDialog(
     var durationSecondsText by remember(existingCall) {
         mutableStateOf(existingDuration.second)
     }
+    var successWindowText by remember(existingCall) {
+        mutableStateOf(
+            (existingCall?.successWindowSeconds ?: ScheduledCall.DEFAULT_SUCCESS_WINDOW_SECONDS)
+                .toString(),
+        )
+    }
 
     val contactPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickContact(),
@@ -187,7 +193,7 @@ fun AddEditCallDialog(
 
                 Text("Expected call duration (optional)")
                 Text(
-                    text = "Leave empty to skip retries. If set, AutoCall redials when the call length is outside the success window in Settings.",
+                    text = "Leave empty to skip retries. If set, AutoCall redials when the call length is outside this call's success window.",
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                 )
                 Row(
@@ -223,6 +229,30 @@ fun AddEditCallDialog(
                     )
                 }
 
+                val parsedDuration = DurationFormatter.parseOptionalDuration(
+                    durationMinutesText,
+                    durationSecondsText,
+                )
+                if (parsedDuration != null) {
+                    OutlinedTextField(
+                        value = successWindowText,
+                        onValueChange = { value ->
+                            if (value.all(Char::isDigit) && value.length <= 3) {
+                                successWindowText = value
+                            }
+                        },
+                        label = { Text("Success window (seconds)") },
+                        supportingText = {
+                            Text(
+                                "A call is successful if it ends within ± this many seconds of the expected duration. Default is ${ScheduledCall.DEFAULT_SUCCESS_WINDOW_SECONDS}.",
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(4.dp))
             }
         },
@@ -243,6 +273,12 @@ fun AddEditCallDialog(
                                 durationMinutesText,
                                 durationSecondsText,
                             ),
+                            successWindowSeconds = successWindowText.toIntOrNull()
+                                ?.coerceIn(
+                                    ScheduledCall.MIN_SUCCESS_WINDOW_SECONDS,
+                                    ScheduledCall.MAX_SUCCESS_WINDOW_SECONDS,
+                                )
+                                ?: ScheduledCall.DEFAULT_SUCCESS_WINDOW_SECONDS,
                         ),
                     )
                 },

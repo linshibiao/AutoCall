@@ -5,10 +5,13 @@ import kotlinx.coroutines.flow.Flow
 
 class ScheduledCallRepository(
     private val dao: ScheduledCallDao,
+    private val durationLogDao: CallDurationLogDao,
     private val alarmScheduler: AlarmScheduler,
 ) {
 
     val scheduledCalls: Flow<List<ScheduledCall>> = dao.getAll()
+
+    val durationLogs: Flow<List<CallDurationLog>> = durationLogDao.getAll()
 
     suspend fun getById(id: Long): ScheduledCall? = dao.getById(id)
 
@@ -31,11 +34,13 @@ class ScheduledCallRepository(
 
     suspend fun delete(scheduledCall: ScheduledCall) {
         alarmScheduler.cancelCall(scheduledCall)
+        durationLogDao.deleteForCall(scheduledCall.id)
         dao.delete(scheduledCall)
     }
 
     suspend fun deleteById(id: Long) {
         alarmScheduler.cancelCall(id)
+        durationLogDao.deleteForCall(id)
         dao.deleteById(id)
     }
 

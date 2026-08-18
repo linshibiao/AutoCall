@@ -6,13 +6,15 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [ScheduledCall::class],
-    version = 3,
+    entities = [ScheduledCall::class, CallDurationLog::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun scheduledCallDao(): ScheduledCallDao
+
+    abstract fun callDurationLogDao(): CallDurationLogDao
 
     companion object {
         @Volatile
@@ -24,7 +26,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "autocall.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .build()
+                    .also { instance = it }
             }
         }
     }

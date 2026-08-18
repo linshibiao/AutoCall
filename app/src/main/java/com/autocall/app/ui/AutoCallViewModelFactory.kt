@@ -15,7 +15,11 @@ class AutoCallViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val database = AppDatabase.getInstance(application)
         val alarmScheduler = AlarmScheduler(application)
-        val repository = ScheduledCallRepository(database.scheduledCallDao(), alarmScheduler)
+        val repository = ScheduledCallRepository(
+            database.scheduledCallDao(),
+            database.callDurationLogDao(),
+            alarmScheduler,
+        )
         return AutoCallViewModel(application, repository) as T
     }
 }

@@ -42,7 +42,7 @@ import com.autocall.app.util.DurationFormatter
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
-    scheduledCalls: List<ScheduledCall>,
+    scheduledCalls: List<ScheduledCallItem>,
     systemStatus: SystemStatus,
     onRefreshStatus: () -> Unit,
     onAddClick: () -> Unit,
@@ -93,12 +93,13 @@ fun DashboardScreen(
                     )
                 }
             } else {
-                items(scheduledCalls, key = { it.id }) { call ->
+                items(scheduledCalls, key = { it.scheduledCall.id }) { item ->
                     SwipeToDeleteCallCard(
-                        scheduledCall = call,
-                        onEditClick = { onEditClick(call) },
-                        onDeleteClick = { onDeleteClick(call) },
-                        onToggleEnabled = { enabled -> onToggleEnabled(call, enabled) },
+                        scheduledCall = item.scheduledCall,
+                        recentDurationsSeconds = item.recentDurationsSeconds,
+                        onEditClick = { onEditClick(item.scheduledCall) },
+                        onDeleteClick = { onDeleteClick(item.scheduledCall) },
+                        onToggleEnabled = { enabled -> onToggleEnabled(item.scheduledCall, enabled) },
                     )
                 }
             }
@@ -110,6 +111,7 @@ fun DashboardScreen(
 @Composable
 private fun SwipeToDeleteCallCard(
     scheduledCall: ScheduledCall,
+    recentDurationsSeconds: List<Int>,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
@@ -144,6 +146,7 @@ private fun SwipeToDeleteCallCard(
     ) {
         ScheduledCallCard(
             scheduledCall = scheduledCall,
+            recentDurationsSeconds = recentDurationsSeconds,
             onEditClick = onEditClick,
             onDeleteClick = onDeleteClick,
             onToggleEnabled = onToggleEnabled,
@@ -154,6 +157,7 @@ private fun SwipeToDeleteCallCard(
 @Composable
 private fun ScheduledCallCard(
     scheduledCall: ScheduledCall,
+    recentDurationsSeconds: List<Int>,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
@@ -210,10 +214,17 @@ private fun ScheduledCallCard(
                     val expectedDuration = scheduledCall.expectedDurationSeconds
                     if (expectedDuration != null && expectedDuration > 0) {
                         Text(
-                            text = "Expected duration: ${DurationFormatter.format(expectedDuration)}",
+                            text = "Expected duration: ${DurationFormatter.format(expectedDuration)} (±${scheduledCall.successWindowSeconds}s)",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (recentDurationsSeconds.isNotEmpty()) {
+                            Text(
+                                text = DurationFormatter.formatRecent(recentDurationsSeconds),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
 

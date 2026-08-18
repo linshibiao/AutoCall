@@ -18,8 +18,16 @@ data class ScheduledCall(
     val useSpeakerphone: Boolean = false,
     /** Expected connected duration in seconds. Null or 0 means retries are disabled. */
     val expectedDurationSeconds: Int? = null,
+    /** Allowed ± seconds around expected duration. Used only when expected duration is set. */
+    val successWindowSeconds: Int = DEFAULT_SUCCESS_WINDOW_SECONDS,
 ) {
     fun days(): Set<Int> = DaysOfWeek.parse(daysOfWeek)
 
     fun hasExpectedDuration(): Boolean = (expectedDurationSeconds ?: 0) > 0
+
+    companion object {
+        const val DEFAULT_SUCCESS_WINDOW_SECONDS = 10
+        const val MIN_SUCCESS_WINDOW_SECONDS = 0
+        const val MAX_SUCCESS_WINDOW_SECONDS = 120
+    }
 }

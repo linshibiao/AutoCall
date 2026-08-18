@@ -41,3 +41,30 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         )
     }
 }
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE scheduled_calls ADD COLUMN successWindowSeconds INTEGER NOT NULL DEFAULT 10",
+        )
+    }
+}
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS call_duration_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                scheduledCallId INTEGER NOT NULL,
+                durationSeconds INTEGER NOT NULL,
+                recordedAtMillis INTEGER NOT NULL,
+                FOREIGN KEY(scheduledCallId) REFERENCES scheduled_calls(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_call_duration_logs_scheduledCallId ON call_duration_logs (scheduledCallId)",
+        )
+    }
+}

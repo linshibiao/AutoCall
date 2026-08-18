@@ -36,8 +36,8 @@ fun AutoCallApp(viewModel: AutoCallViewModel) {
         SettingsDialog(
             retrySettings = retrySettings,
             onDismiss = { showSettings = false },
-            onSave = { tolerance, retries, deadlineMinutes ->
-                viewModel.updateRetrySettings(tolerance, retries, deadlineMinutes)
+            onSave = { retries, deadlineMinutes ->
+                viewModel.updateRetrySettings(retries, deadlineMinutes)
                 showSettings = false
             },
         )

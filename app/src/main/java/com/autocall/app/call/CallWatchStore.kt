@@ -20,6 +20,7 @@ data class CallWatchSession(
     val contactName: String?,
     val phoneNumber: String,
     val useSpeakerphone: Boolean,
+    val successWindowSeconds: Int,
 )
 
 object CallWatchStore {
@@ -48,6 +49,10 @@ object CallWatchStore {
             contactName = prefs.getString(KEY_CONTACT_NAME, null),
             phoneNumber = prefs.getString(KEY_PHONE_NUMBER, "").orEmpty(),
             useSpeakerphone = prefs.getBoolean(KEY_USE_SPEAKERPHONE, false),
+            successWindowSeconds = prefs.getInt(
+                KEY_SUCCESS_WINDOW_SECONDS,
+                10,
+            ),
         )
     }
 
@@ -64,6 +69,7 @@ object CallWatchStore {
             .putString(KEY_CONTACT_NAME, session.contactName)
             .putString(KEY_PHONE_NUMBER, session.phoneNumber)
             .putBoolean(KEY_USE_SPEAKERPHONE, session.useSpeakerphone)
+            .putInt(KEY_SUCCESS_WINDOW_SECONDS, session.successWindowSeconds)
             .commit()
     }
 
@@ -86,4 +92,5 @@ object CallWatchStore {
     private const val KEY_CONTACT_NAME = "contact_name"
     private const val KEY_PHONE_NUMBER = "phone_number"
     private const val KEY_USE_SPEAKERPHONE = "use_speakerphone"
+    private const val KEY_SUCCESS_WINDOW_SECONDS = "success_window_seconds"
 }

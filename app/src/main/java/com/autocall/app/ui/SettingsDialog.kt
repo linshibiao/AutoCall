@@ -26,11 +26,8 @@ import com.autocall.app.data.RetrySettings
 fun SettingsDialog(
     retrySettings: RetrySettings,
     onDismiss: () -> Unit,
-    onSave: (toleranceSeconds: Int, maxRetries: Int, retryDeadlineMinutes: Int) -> Unit,
+    onSave: (maxRetries: Int, retryDeadlineMinutes: Int) -> Unit,
 ) {
-    var toleranceText by remember(retrySettings) {
-        mutableStateOf(retrySettings.durationToleranceSeconds.toString())
-    }
     var retriesText by remember(retrySettings) {
         mutableStateOf(retrySettings.maxRetries.toString())
     }
@@ -38,10 +35,9 @@ fun SettingsDialog(
         mutableStateOf(retrySettings.retryDeadlineMinutes.toString())
     }
 
-    val tolerance = toleranceText.toIntOrNull()
     val retries = retriesText.toIntOrNull()
     val deadlineMinutes = deadlineText.toIntOrNull()
-    val canSave = tolerance != null && retries != null && deadlineMinutes != null
+    val canSave = retries != null && deadlineMinutes != null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -57,24 +53,6 @@ fun SettingsDialog(
                     text = "These settings apply when a scheduled call has an expected duration.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                OutlinedTextField(
-                    value = toleranceText,
-                    onValueChange = { value ->
-                        if (value.all(Char::isDigit) && value.length <= 3) {
-                            toleranceText = value
-                        }
-                    },
-                    label = { Text("Success window (seconds)") },
-                    supportingText = {
-                        Text(
-                            "A call is successful if it ends within ± this many seconds of the expected duration. Default is ${RetrySettings.DEFAULT_TOLERANCE_SECONDS}.",
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
                 )
 
                 OutlinedTextField(
@@ -117,8 +95,8 @@ fun SettingsDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (tolerance != null && retries != null && deadlineMinutes != null) {
-                        onSave(tolerance, retries, deadlineMinutes)
+                    if (retries != null && deadlineMinutes != null) {
+                        onSave(retries, deadlineMinutes)
                     }
                 },
                 enabled = canSave,

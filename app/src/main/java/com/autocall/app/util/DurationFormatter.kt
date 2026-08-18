@@ -32,4 +32,14 @@ object DurationFormatter {
         }
         return minutesText to secondsText
     }
+
+    fun formatRecent(durations: List<Int>): String {
+        if (durations.isEmpty()) return ""
+        val list = durations.joinToString(", ") { format(it) }
+        if (durations.size == 1) {
+            return "Recent calls: $list"
+        }
+        val average = durations.average().toInt()
+        return "Recent calls: $list (avg ${format(average)})"
+    }
 }

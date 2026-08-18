@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autocall.app.data.AppSettings
+import com.autocall.app.data.CallDurationLog
 import com.autocall.app.data.RetrySettings
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.data.ScheduledCallRepository
@@ -14,9 +15,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+data class ScheduledCallItem(
+    val scheduledCall: ScheduledCall,
+    val recentDurationsSeconds: List<Int> = emptyList(),
+)
 
 data class SystemStatus(
     val hasCallPhonePermission: Boolean = false,
@@ -44,9 +50,25 @@ class AutoCallViewModel(
     private val appSettings: AppSettings = AppSettings(application),
 ) : AndroidViewModel(application) {
 
-    val scheduledCalls = repository.scheduledCalls
-        .map { calls -> calls.sortedByNextTrigger() }
-        .stateIn(
+    val scheduledCalls = combine(
+        repository.scheduledCalls,
+        repository.durationLogs,
+    ) { calls, logs ->
+        val recentByCallId = logs
+            .groupBy { log -> log.scheduledCallId }
+            .mapValues { (_, entries) ->
+                entries
+                    .sortedByDescending { log -> log.recordedAtMillis }
+                    .take(CallDurationLog.MAX_RECENT)
+                    .map { log -> log.durationSeconds }
+            }
+        calls.sortedByNextTrigger().map { call ->
+            ScheduledCallItem(
+                scheduledCall = call,
+                recentDurationsSeconds = recentByCallId[call.id].orEmpty(),
+            )
+        }
+    }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyList(),
@@ -110,6 +132,7 @@ class AutoCallViewModel(
                 isEnabled = form.isEnabled,
                 useSpeakerphone = form.useSpeakerphone,
                 expectedDurationSeconds = form.expectedDurationSeconds,
+                successWindowSeconds = form.successWindowSeconds,
             )
 
             if (call.phoneNumber.isBlank() || call.days().isEmpty()) return@launch
@@ -135,9 +158,8 @@ class AutoCallViewModel(
         }
     }
 
-    fun updateRetrySettings(toleranceSeconds: Int, maxRetries: Int, retryDeadlineMinutes: Int) {
+    fun updateRetrySettings(maxRetries: Int, retryDeadlineMinutes: Int) {
         _retrySettings.value = appSettings.setRetrySettings(
-            toleranceSeconds = toleranceSeconds,
             maxRetries = maxRetries,
             retryDeadlineMinutes = retryDeadlineMinutes,
         )
@@ -154,4 +176,5 @@ data class ScheduledCallForm(
     val isEnabled: Boolean = true,
     val useSpeakerphone: Boolean = false,
     val expectedDurationSeconds: Int? = null,
+    val successWindowSeconds: Int = ScheduledCall.DEFAULT_SUCCESS_WINDOW_SECONDS,
 )

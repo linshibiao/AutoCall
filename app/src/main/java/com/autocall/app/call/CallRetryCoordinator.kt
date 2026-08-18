@@ -5,7 +5,9 @@ import android.os.Handler
 import android.os.Looper
 import android.telephony.TelephonyManager
 import android.util.Log
+import com.autocall.app.data.AppDatabase
 import com.autocall.app.data.AppSettings
+import com.autocall.app.data.CallDurationLog
 import com.autocall.app.data.RetrySettings
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.scheduler.AlarmScheduler
@@ -64,6 +66,10 @@ object CallRetryCoordinator {
                     contactName = scheduledCall.contactName,
                     phoneNumber = scheduledCall.phoneNumber,
                     useSpeakerphone = scheduledCall.useSpeakerphone,
+                    successWindowSeconds = scheduledCall.successWindowSeconds.coerceIn(
+                        ScheduledCall.MIN_SUCCESS_WINDOW_SECONDS,
+                        ScheduledCall.MAX_SUCCESS_WINDOW_SECONDS,
+                    ),
                 ),
             )
             ensureMonitorLocked(appContext)
@@ -87,8 +93,7 @@ object CallRetryCoordinator {
                 ),
             )
             ensureMonitorLocked(appContext)
-            val settings = AppSettings(appContext).getRetrySettings()
-            timeoutSeconds = session.expectedDurationSeconds + settings.durationToleranceSeconds + 15
+            timeoutSeconds = session.expectedDurationSeconds + session.successWindowSeconds + 15
             sessionId = session.scheduledCallId
             placedAt = placedAtMillis
         }
@@ -197,14 +202,16 @@ object CallRetryCoordinator {
             val session = CallWatchStore.load(appContext) ?: return
             if (session.phase == CallWatchPhase.RETRY_PENDING) return
 
+            recordDuration(appContext, session.scheduledCallId, actualDurationSeconds)
+
             val settings = AppSettings(appContext).getRetrySettings()
             val delta = abs(actualDurationSeconds - session.expectedDurationSeconds)
-            val withinWindow = delta <= settings.durationToleranceSeconds
+            val withinWindow = delta <= session.successWindowSeconds
 
             Log.d(
                 TAG,
                 "Call ${session.scheduledCallId} lasted ${actualDurationSeconds}s " +
-                    "(expected ${session.expectedDurationSeconds}s ±${settings.durationToleranceSeconds}s)",
+                    "(expected ${session.expectedDurationSeconds}s ±${session.successWindowSeconds}s)",
             )
 
             if (withinWindow) {
@@ -252,6 +259,27 @@ object CallRetryCoordinator {
         CallWatchStore.clear(appContext)
         FailureNotifier.show(appContext, session)
         Log.w(TAG, "Giving up on call ${session.scheduledCallId}: $reason")
+    }
+
+    private fun recordDuration(context: Context, scheduledCallId: Long, durationSeconds: Int) {
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val dao = AppDatabase.getInstance(context).callDurationLogDao()
+                dao.insert(
+                    CallDurationLog(
+                        scheduledCallId = scheduledCallId,
+                        durationSeconds = durationSeconds,
+                        recordedAtMillis = System.currentTimeMillis(),
+                    ),
+                )
+                val ids = dao.idsForCall(scheduledCallId)
+                if (ids.size > CallDurationLog.MAX_RECENT) {
+                    dao.deleteByIds(ids.drop(CallDurationLog.MAX_RECENT))
+                }
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to record call duration", error)
+            }
+        }
     }
 
     private fun startWatchTimeout(
