@@ -5,5 +5,9 @@
     <string name="notification_channel_description">Notifications shown while AutoCall places a scheduled call</string>
     <string name="notification_call_title">Placing scheduled call</string>
     <string name="notification_call_text">AutoCall is starting your scheduled phone call</string>
+    <string name="notification_alert_channel_name">Call alerts</string>
+    <string name="notification_alert_channel_description">Alerts when a scheduled call may have failed</string>
+    <string name="notification_retry_failed_title">Scheduled call may have failed</string>
+    <string name="notification_retry_failed_text">The call to %1$s did not last the expected duration.</string>
     <string name="next_call_prefix">Next call:</string>
 </resources>

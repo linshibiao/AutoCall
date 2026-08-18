@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -36,6 +37,7 @@ import com.autocall.app.data.ScheduledCall
 import com.autocall.app.scheduler.AlarmScheduler
 import com.autocall.app.util.DayOfWeekFormatter
 import com.autocall.app.util.DaysOfWeek
+import com.autocall.app.util.DurationFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,10 +49,18 @@ fun DashboardScreen(
     onEditClick: (ScheduledCall) -> Unit,
     onDeleteClick: (ScheduledCall) -> Unit,
     onToggleEnabled: (ScheduledCall, Boolean) -> Unit,
+    onSettingsClick: () -> Unit,
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("AutoCall") })
+            TopAppBar(
+                title = { Text("AutoCall") },
+                actions = {
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                },
+            )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onAddClick) {
@@ -195,6 +205,14 @@ private fun ScheduledCallCard(
                             text = "Speakerphone enabled",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    val expectedDuration = scheduledCall.expectedDurationSeconds
+                    if (expectedDuration != null && expectedDuration > 0) {
+                        Text(
+                            text = "Expected duration: ${DurationFormatter.format(expectedDuration)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

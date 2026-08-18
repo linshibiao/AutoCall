@@ -70,7 +70,7 @@ fun PermissionBanner(
 
             if (!systemStatus.hasAllRuntimePermissions) {
                 Text(
-                    text = "Grant phone, contacts, and notification permissions so scheduled calls can run.",
+                    text = "Grant phone, phone state, contacts, and notification permissions so scheduled calls can run and duration retries can be verified.",
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
                 Button(

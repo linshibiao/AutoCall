@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -32,11 +33,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.util.ContactPickerHelper
 import com.autocall.app.util.DayOfWeekFormatter
 import com.autocall.app.util.DaysOfWeek
+import com.autocall.app.util.DurationFormatter
 import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -72,6 +75,15 @@ fun AddEditCallDialog(
     }
     var isEnabled by remember(existingCall) {
         mutableStateOf(existingCall?.isEnabled ?: true)
+    }
+    val existingDuration = remember(existingCall) {
+        DurationFormatter.split(existingCall?.expectedDurationSeconds)
+    }
+    var durationMinutesText by remember(existingCall) {
+        mutableStateOf(existingDuration.first)
+    }
+    var durationSecondsText by remember(existingCall) {
+        mutableStateOf(existingDuration.second)
     }
 
     val contactPickerLauncher = rememberLauncherForActivityResult(
@@ -173,6 +185,44 @@ fun AddEditCallDialog(
                     Text("Schedule enabled")
                 }
 
+                Text("Expected call duration (optional)")
+                Text(
+                    text = "Leave empty to skip retries. If set, AutoCall redials when the call length is outside the success window in Settings.",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = durationMinutesText,
+                        onValueChange = { value ->
+                            if (value.all(Char::isDigit) && value.length <= 3) {
+                                durationMinutesText = value
+                            }
+                        },
+                        label = { Text("Minutes") },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = durationSecondsText,
+                        onValueChange = { value ->
+                            if (value.all(Char::isDigit) && value.length <= 2) {
+                                val parsed = value.toIntOrNull()
+                                if (parsed == null || parsed <= 59) {
+                                    durationSecondsText = value
+                                }
+                            }
+                        },
+                        label = { Text("Seconds") },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(4.dp))
             }
         },
@@ -189,6 +239,10 @@ fun AddEditCallDialog(
                             minute = minute,
                             isEnabled = isEnabled,
                             useSpeakerphone = useSpeakerphone,
+                            expectedDurationSeconds = DurationFormatter.parseOptionalDuration(
+                                durationMinutesText,
+                                durationSecondsText,
+                            ),
                         ),
                     )
                 },

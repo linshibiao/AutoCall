@@ -79,11 +79,56 @@ class AlarmScheduler(private val context: Context) {
         scheduledCall.days().forEach { dayOfWeek ->
             cancelCallDay(scheduledCall.id, dayOfWeek)
         }
+        cancelRetry(scheduledCall.id)
     }
 
     fun cancelCall(id: Long) {
         for (dayOfWeek in Calendar.SUNDAY..Calendar.SATURDAY) {
             cancelCallDay(id, dayOfWeek)
+        }
+        cancelRetry(id)
+    }
+
+    fun scheduleRetry(
+        scheduledCallId: Long,
+        dayOfWeek: Int,
+        retryAttempt: Int,
+        delayMs: Long,
+    ): Boolean {
+        if (!PermissionHelper.canScheduleExactAlarms(context)) {
+            Log.w(TAG, "Exact alarm permission missing; cannot retry call $scheduledCallId")
+            return false
+        }
+
+        val triggerAtMillis = System.currentTimeMillis() + delayMs
+        val operationIntent = retryPendingIntent(scheduledCallId, dayOfWeek, retryAttempt)
+
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    operationIntent,
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    operationIntent,
+                )
+            }
+            Log.d(TAG, "Scheduled retry $retryAttempt for call $scheduledCallId")
+            true
+        } catch (securityException: SecurityException) {
+            Log.e(TAG, "Failed to schedule retry for call $scheduledCallId", securityException)
+            false
+        }
+    }
+
+    fun cancelRetry(scheduledCallId: Long) {
+        for (dayOfWeek in Calendar.SUNDAY..Calendar.SATURDAY) {
+            alarmManager.cancel(retryPendingIntent(scheduledCallId, dayOfWeek, 0))
         }
     }
 
@@ -111,11 +156,35 @@ class AlarmScheduler(private val context: Context) {
         )
     }
 
+    private fun retryPendingIntent(
+        scheduledCallId: Long,
+        dayOfWeek: Int,
+        retryAttempt: Int,
+    ): PendingIntent {
+        val intent = Intent(context, CallAlarmReceiver::class.java).apply {
+            action = CallAlarmReceiver.ACTION_TRIGGER_CALL
+            putExtra(CallAlarmReceiver.EXTRA_SCHEDULED_CALL_ID, scheduledCallId)
+            putExtra(CallAlarmReceiver.EXTRA_DAY_OF_WEEK, dayOfWeek)
+            putExtra(CallAlarmReceiver.EXTRA_RETRY_ATTEMPT, retryAttempt)
+        }
+
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getBroadcast(
+            context,
+            retryRequestCode(scheduledCallId, dayOfWeek),
+            intent,
+            flags,
+        )
+    }
+
     companion object {
         private const val TAG = "AlarmScheduler"
 
         fun requestCode(scheduledCallId: Long, dayOfWeek: Int): Int =
             (scheduledCallId.toInt() * 10) + dayOfWeek
+
+        fun retryRequestCode(scheduledCallId: Long, dayOfWeek: Int): Int =
+            10_000 + (scheduledCallId.toInt() * 10) + dayOfWeek
 
         fun nextTriggerMillis(dayOfWeek: Int, hour: Int, minute: Int): Long {
             val now = Calendar.getInstance()

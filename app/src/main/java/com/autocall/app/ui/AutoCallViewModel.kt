@@ -3,6 +3,8 @@ package com.autocall.app.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.autocall.app.data.AppSettings
+import com.autocall.app.data.RetrySettings
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.data.ScheduledCallRepository
 import com.autocall.app.util.DaysOfWeek
@@ -18,6 +20,7 @@ import kotlinx.coroutines.launch
 
 data class SystemStatus(
     val hasCallPhonePermission: Boolean = false,
+    val hasReadPhoneStatePermission: Boolean = false,
     val hasReadContactsPermission: Boolean = false,
     val hasNotificationPermission: Boolean = true,
     val canScheduleExactAlarms: Boolean = true,
@@ -25,6 +28,7 @@ data class SystemStatus(
 ) {
     val hasAllRuntimePermissions: Boolean
         get() = hasCallPhonePermission &&
+            hasReadPhoneStatePermission &&
             hasReadContactsPermission &&
             hasNotificationPermission
 
@@ -37,6 +41,7 @@ data class SystemStatus(
 class AutoCallViewModel(
     application: Application,
     private val repository: ScheduledCallRepository,
+    private val appSettings: AppSettings = AppSettings(application),
 ) : AndroidViewModel(application) {
 
     val scheduledCalls = repository.scheduledCalls
@@ -53,10 +58,14 @@ class AutoCallViewModel(
     private val _editingCall = MutableStateFlow<ScheduledCall?>(null)
     val editingCall: StateFlow<ScheduledCall?> = _editingCall.asStateFlow()
 
+    private val _retrySettings = MutableStateFlow(appSettings.getRetrySettings())
+    val retrySettings: StateFlow<RetrySettings> = _retrySettings.asStateFlow()
+
     fun refreshSystemStatus() {
         val context = getApplication<Application>()
         _systemStatus.value = SystemStatus(
             hasCallPhonePermission = PermissionHelper.hasCallPhonePermission(context),
+            hasReadPhoneStatePermission = PermissionHelper.hasReadPhoneStatePermission(context),
             hasReadContactsPermission = PermissionHelper.hasReadContactsPermission(context),
             hasNotificationPermission = PermissionHelper.hasNotificationPermission(context),
             canScheduleExactAlarms = PermissionHelper.canScheduleExactAlarms(context),
@@ -100,6 +109,7 @@ class AutoCallViewModel(
                 minute = form.minute,
                 isEnabled = form.isEnabled,
                 useSpeakerphone = form.useSpeakerphone,
+                expectedDurationSeconds = form.expectedDurationSeconds,
             )
 
             if (call.phoneNumber.isBlank() || call.days().isEmpty()) return@launch
@@ -124,6 +134,14 @@ class AutoCallViewModel(
             repository.delete(scheduledCall)
         }
     }
+
+    fun updateRetrySettings(toleranceSeconds: Int, maxRetries: Int, retryDeadlineMinutes: Int) {
+        _retrySettings.value = appSettings.setRetrySettings(
+            toleranceSeconds = toleranceSeconds,
+            maxRetries = maxRetries,
+            retryDeadlineMinutes = retryDeadlineMinutes,
+        )
+    }
 }
 
 data class ScheduledCallForm(
@@ -135,4 +153,5 @@ data class ScheduledCallForm(
     val minute: Int = 0,
     val isEnabled: Boolean = true,
     val useSpeakerphone: Boolean = false,
+    val expectedDurationSeconds: Int? = null,
 )

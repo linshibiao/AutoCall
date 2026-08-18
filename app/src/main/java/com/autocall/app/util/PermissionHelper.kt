@@ -15,6 +15,7 @@ object PermissionHelper {
 
     val requiredRuntimePermissions: Array<String> = arrayOf(
         Manifest.permission.CALL_PHONE,
+        Manifest.permission.READ_PHONE_STATE,
         Manifest.permission.READ_CONTACTS,
     )
 
@@ -43,6 +44,10 @@ object PermissionHelper {
 
     fun hasReadContactsPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    fun hasReadPhoneStatePermission(context: Context): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) ==
             PackageManager.PERMISSION_GRANTED
 
     fun hasAllRuntimePermissions(context: Context): Boolean =

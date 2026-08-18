@@ -16,6 +16,10 @@ data class ScheduledCall(
     val minute: Int,
     val isEnabled: Boolean = true,
     val useSpeakerphone: Boolean = false,
+    /** Expected connected duration in seconds. Null or 0 means retries are disabled. */
+    val expectedDurationSeconds: Int? = null,
 ) {
     fun days(): Set<Int> = DaysOfWeek.parse(daysOfWeek)
+
+    fun hasExpectedDuration(): Boolean = (expectedDurationSeconds ?: 0) > 0
 }

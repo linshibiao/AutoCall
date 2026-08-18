@@ -1,6 +1,7 @@
 package com.autocall.app
 
 import android.app.Application
+import com.autocall.app.call.CallRetryCoordinator
 import com.autocall.app.data.AppDatabase
 import com.autocall.app.scheduler.AlarmScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -18,5 +19,6 @@ class AutoCallApplication : Application() {
             val dao = AppDatabase.getInstance(this@AutoCallApplication).scheduledCallDao()
             AlarmScheduler(this@AutoCallApplication).rescheduleAll(dao)
         }
+        CallRetryCoordinator.restore(this)
     }
 }

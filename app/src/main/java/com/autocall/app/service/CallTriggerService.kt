@@ -15,10 +15,12 @@ import androidx.core.content.ContextCompat
 import com.autocall.app.MainActivity
 import com.autocall.app.R
 import com.autocall.app.call.CallLauncher
+import com.autocall.app.call.CallRetryCoordinator
 import com.autocall.app.call.SpeakerphoneHelper
 import com.autocall.app.data.AppDatabase
 import com.autocall.app.receiver.CallAlarmReceiver
 import com.autocall.app.scheduler.AlarmScheduler
+import com.autocall.app.util.PermissionHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,6 +44,8 @@ class CallTriggerService : Service() {
             CallAlarmReceiver.EXTRA_DAY_OF_WEEK,
             -1,
         ) ?: -1
+
+        val retryAttempt = intent?.getIntExtra(CallAlarmReceiver.EXTRA_RETRY_ATTEMPT, 0) ?: 0
 
         if (scheduledCallId < 0 || dayOfWeek < 0) {
             stopSelf()
@@ -68,7 +72,7 @@ class CallTriggerService : Service() {
 
         serviceScope.launch {
             try {
-                handleScheduledCall(scheduledCallId, dayOfWeek)
+                handleScheduledCall(scheduledCallId, dayOfWeek, retryAttempt)
             } finally {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -88,20 +92,61 @@ class CallTriggerService : Service() {
         super.onDestroy()
     }
 
-    private suspend fun handleScheduledCall(scheduledCallId: Long, dayOfWeek: Int) {
+    private suspend fun handleScheduledCall(
+        scheduledCallId: Long,
+        dayOfWeek: Int,
+        retryAttempt: Int,
+    ) {
         val dao = AppDatabase.getInstance(this).scheduledCallDao()
-        val scheduledCall = dao.getById(scheduledCallId) ?: return
-        if (!scheduledCall.isEnabled) return
-        if (!scheduledCall.days().contains(dayOfWeek)) return
+        val scheduledCall = dao.getById(scheduledCallId)
+        if (scheduledCall == null || !scheduledCall.isEnabled) {
+            CallRetryCoordinator.abort(this)
+            return
+        }
+        if (!scheduledCall.days().contains(dayOfWeek)) {
+            if (retryAttempt > 0) {
+                CallRetryCoordinator.abort(this)
+            }
+            return
+        }
+
+        val shouldWatch = scheduledCall.hasExpectedDuration() &&
+            PermissionHelper.hasReadPhoneStatePermission(this)
+
+        if (retryAttempt > 0 && !shouldWatch) {
+            CallRetryCoordinator.abort(this)
+            return
+        }
+
+        if (retryAttempt > 0 && CallRetryCoordinator.giveUpIfPastDeadline(this)) {
+            return
+        }
+
+        if (shouldWatch && retryAttempt == 0) {
+            CallRetryCoordinator.beginSession(this, scheduledCall, dayOfWeek)
+        }
 
         val placed = CallLauncher.placeCall(
             this,
             scheduledCall.phoneNumber,
             scheduledCall.useSpeakerphone,
         )
-        if (!placed) return
+        if (!placed) {
+            if (shouldWatch && PermissionHelper.hasCallPhonePermission(this)) {
+                CallRetryCoordinator.onPlacementFailed(this)
+            } else if (shouldWatch) {
+                CallRetryCoordinator.abort(this)
+            }
+            return
+        }
 
-        AlarmScheduler(this).scheduleCallDay(scheduledCall, dayOfWeek)
+        if (shouldWatch) {
+            CallRetryCoordinator.onCallPlaced(this)
+        }
+
+        if (retryAttempt == 0) {
+            AlarmScheduler(this).scheduleCallDay(scheduledCall, dayOfWeek)
+        }
 
         if (scheduledCall.useSpeakerphone) {
             enableSpeakerphoneWithRetries()
@@ -155,10 +200,16 @@ class CallTriggerService : Service() {
         private const val SPEAKERPHONE_RETRY_COUNT = 5
         private const val SPEAKERPHONE_RETRY_DELAY_MS = 1_500L
 
-        fun start(context: Context, scheduledCallId: Long, dayOfWeek: Int) {
+        fun start(
+            context: Context,
+            scheduledCallId: Long,
+            dayOfWeek: Int,
+            retryAttempt: Int = 0,
+        ) {
             val intent = Intent(context, CallTriggerService::class.java).apply {
                 putExtra(CallAlarmReceiver.EXTRA_SCHEDULED_CALL_ID, scheduledCallId)
                 putExtra(CallAlarmReceiver.EXTRA_DAY_OF_WEEK, dayOfWeek)
+                putExtra(CallAlarmReceiver.EXTRA_RETRY_ATTEMPT, retryAttempt)
             }
             ContextCompat.startForegroundService(context, intent)
         }
