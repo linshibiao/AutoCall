@@ -34,7 +34,7 @@ object DurationFormatter {
     }
 
     fun formatRecent(durations: List<Int>): String {
-        if (durations.isEmpty()) return ""
+        if (durations.isEmpty()) return "Recent calls: none"
         val list = durations.joinToString(", ") { format(it) }
         if (durations.size == 1) {
             return "Recent calls: $list"

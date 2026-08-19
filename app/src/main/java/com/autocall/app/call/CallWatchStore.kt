@@ -30,7 +30,7 @@ object CallWatchStore {
         val id = prefs.getLong(KEY_CALL_ID, -1L)
         if (id < 0) return null
         val expected = prefs.getInt(KEY_EXPECTED_DURATION, 0)
-        if (expected <= 0) return null
+        if (expected < 0) return null
         val phase = runCatching {
             CallWatchPhase.valueOf(prefs.getString(KEY_PHASE, null).orEmpty())
         }.getOrNull() ?: return null

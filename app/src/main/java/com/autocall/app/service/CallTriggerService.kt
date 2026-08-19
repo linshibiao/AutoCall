@@ -110,10 +110,10 @@ class CallTriggerService : Service() {
             return
         }
 
-        val shouldWatch = scheduledCall.hasExpectedDuration() &&
-            PermissionHelper.hasReadPhoneStatePermission(this)
+        val canTrackDuration = PermissionHelper.hasReadPhoneStatePermission(this)
+        val shouldRetry = scheduledCall.hasExpectedDuration() && canTrackDuration
 
-        if (retryAttempt > 0 && !shouldWatch) {
+        if (retryAttempt > 0 && !shouldRetry) {
             CallRetryCoordinator.abort(this)
             return
         }
@@ -122,7 +122,7 @@ class CallTriggerService : Service() {
             return
         }
 
-        if (shouldWatch && retryAttempt == 0) {
+        if (canTrackDuration && retryAttempt == 0) {
             CallRetryCoordinator.beginSession(this, scheduledCall, dayOfWeek)
         }
 
@@ -132,15 +132,15 @@ class CallTriggerService : Service() {
             scheduledCall.useSpeakerphone,
         )
         if (!placed) {
-            if (shouldWatch && PermissionHelper.hasCallPhonePermission(this)) {
+            if (canTrackDuration && PermissionHelper.hasCallPhonePermission(this)) {
                 CallRetryCoordinator.onPlacementFailed(this)
-            } else if (shouldWatch) {
+            } else if (canTrackDuration) {
                 CallRetryCoordinator.abort(this)
             }
             return
         }
 
-        if (shouldWatch) {
+        if (canTrackDuration) {
             CallRetryCoordinator.onCallPlaced(this)
         }
 

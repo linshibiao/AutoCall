@@ -39,8 +39,7 @@ object CallRetryCoordinator {
     }
 
     fun beginSession(context: Context, scheduledCall: ScheduledCall, dayOfWeek: Int) {
-        val expected = scheduledCall.expectedDurationSeconds ?: return
-        if (expected <= 0) return
+        val expected = scheduledCall.expectedDurationSeconds?.takeIf { it > 0 } ?: 0
 
         val appContext = context.applicationContext
         synchronized(lock) {
@@ -93,7 +92,11 @@ object CallRetryCoordinator {
                 ),
             )
             ensureMonitorLocked(appContext)
-            timeoutSeconds = session.expectedDurationSeconds + session.successWindowSeconds + 15
+            timeoutSeconds = if (session.expectedDurationSeconds > 0) {
+                session.expectedDurationSeconds + session.successWindowSeconds + 15
+            } else {
+                DEFAULT_DURATION_ONLY_TIMEOUT_SECONDS
+            }
             sessionId = session.scheduledCallId
             placedAt = placedAtMillis
         }
@@ -203,6 +206,18 @@ object CallRetryCoordinator {
             if (session.phase == CallWatchPhase.RETRY_PENDING) return
 
             recordDuration(appContext, session.scheduledCallId, actualDurationSeconds)
+
+            if (session.expectedDurationSeconds <= 0) {
+                Log.d(
+                    TAG,
+                    "Call ${session.scheduledCallId} lasted ${actualDurationSeconds}s (duration tracking only)",
+                )
+                stopSpeakerphoneLocked()
+                stopWatchTimeoutLocked()
+                stopMonitorLocked()
+                CallWatchStore.clear(appContext)
+                return
+            }
 
             val settings = AppSettings(appContext).getRetrySettings()
             val delta = abs(actualDurationSeconds - session.expectedDurationSeconds)
@@ -388,6 +403,7 @@ object CallRetryCoordinator {
     private const val RETRY_DELAY_MS = 3_000L
     private const val STALE_IDLE_GRACE_MS = 1_500L
     private const val TWELVE_HOURS_MS = 12 * 60 * 60 * 1000L
+    private const val DEFAULT_DURATION_ONLY_TIMEOUT_SECONDS = 30 * 60
     private const val SPEAKERPHONE_RETRY_COUNT = 6
     private const val SPEAKERPHONE_RETRY_DELAY_MS = 1_000L
 }
