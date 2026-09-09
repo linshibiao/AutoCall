@@ -158,10 +158,15 @@ class AutoCallViewModel(
         }
     }
 
-    fun updateRetrySettings(maxRetries: Int, retryDeadlineMinutes: Int) {
+    fun updateRetrySettings(
+        maxRetries: Int,
+        retryDeadlineMinutes: Int,
+        busyDeferPromptMinutes: Int,
+    ) {
         _retrySettings.value = appSettings.setRetrySettings(
             maxRetries = maxRetries,
             retryDeadlineMinutes = retryDeadlineMinutes,
+            busyDeferPromptMinutes = busyDeferPromptMinutes,
         )
     }
 }

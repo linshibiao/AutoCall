@@ -10,14 +10,21 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.autocall.app.MainActivity
 import com.autocall.app.R
+import com.autocall.app.call.BusyDeferLogic
+import com.autocall.app.call.BusyDeferNotifier
+import com.autocall.app.call.BusyDeferState
+import com.autocall.app.call.BusyDeferStore
 import com.autocall.app.call.CallLauncher
 import com.autocall.app.call.CallRetryCoordinator
 import com.autocall.app.call.SpeakerphoneHelper
 import com.autocall.app.data.AppDatabase
+import com.autocall.app.data.AppSettings
+import com.autocall.app.data.ScheduledCall
 import com.autocall.app.receiver.CallAlarmReceiver
 import com.autocall.app.scheduler.AlarmScheduler
 import com.autocall.app.util.PermissionHelper
@@ -46,6 +53,11 @@ class CallTriggerService : Service() {
         ) ?: -1
 
         val retryAttempt = intent?.getIntExtra(CallAlarmReceiver.EXTRA_RETRY_ATTEMPT, 0) ?: 0
+        val deferredSinceMillis = intent?.getLongExtra(
+            CallAlarmReceiver.EXTRA_DEFERRED_SINCE_MILLIS,
+            -1L,
+        ) ?: -1L
+        val forcePlace = intent?.getBooleanExtra(EXTRA_FORCE_PLACE, false) ?: false
 
         if (scheduledCallId < 0 || dayOfWeek < 0) {
             stopSelf()
@@ -72,7 +84,13 @@ class CallTriggerService : Service() {
 
         serviceScope.launch {
             try {
-                handleScheduledCall(scheduledCallId, dayOfWeek, retryAttempt)
+                handleScheduledCall(
+                    scheduledCallId = scheduledCallId,
+                    dayOfWeek = dayOfWeek,
+                    retryAttempt = retryAttempt,
+                    deferredSinceMillis = deferredSinceMillis,
+                    forcePlace = forcePlace,
+                )
             } finally {
                 stopSelf(startId)
             }
@@ -96,10 +114,13 @@ class CallTriggerService : Service() {
         scheduledCallId: Long,
         dayOfWeek: Int,
         retryAttempt: Int,
+        deferredSinceMillis: Long,
+        forcePlace: Boolean,
     ) {
         val dao = AppDatabase.getInstance(this).scheduledCallDao()
         val scheduledCall = dao.getById(scheduledCallId)
         if (scheduledCall == null || !scheduledCall.isEnabled) {
+            clearBusyDefer(scheduledCallId)
             CallRetryCoordinator.abort(this)
             return
         }
@@ -107,6 +128,7 @@ class CallTriggerService : Service() {
             if (retryAttempt > 0) {
                 CallRetryCoordinator.abort(this)
             }
+            clearBusyDefer(scheduledCallId)
             return
         }
 
@@ -114,16 +136,51 @@ class CallTriggerService : Service() {
         val shouldRetry = scheduledCall.hasExpectedDuration() && canTrackDuration
 
         if (retryAttempt > 0 && !shouldRetry) {
+            clearBusyDefer(scheduledCallId)
             CallRetryCoordinator.abort(this)
             return
         }
 
         if (retryAttempt > 0 && CallRetryCoordinator.giveUpIfPastDeadline(this)) {
+            clearBusyDefer(scheduledCallId)
             return
         }
 
+        // Never placeCall while another call is active: Android holds/drops the prior call,
+        // CallWatchStore is single-slot, and IDLE never fires until every call ends — so
+        // duration and redial for both calls break. Defer until the line and watch slot are free.
+        if (
+            CallRetryCoordinator.shouldDeferDial(
+                context = this,
+                scheduledCallId = scheduledCallId,
+                retryAttempt = retryAttempt,
+                forcePlace = forcePlace,
+            )
+        ) {
+            handleBusyDefer(
+                scheduledCall = scheduledCall,
+                dayOfWeek = dayOfWeek,
+                retryAttempt = retryAttempt,
+                deferredSinceMillis = deferredSinceMillis,
+                // Place was tapped but another watch session still owns the slot — keep polling.
+                resumePolling = forcePlace,
+            )
+            return
+        }
+
+        clearBusyDefer(scheduledCallId)
+
         if (canTrackDuration && retryAttempt == 0) {
-            CallRetryCoordinator.beginSession(this, scheduledCall, dayOfWeek)
+            if (!CallRetryCoordinator.beginSession(this, scheduledCall, dayOfWeek)) {
+                handleBusyDefer(
+                    scheduledCall = scheduledCall,
+                    dayOfWeek = dayOfWeek,
+                    retryAttempt = retryAttempt,
+                    deferredSinceMillis = deferredSinceMillis,
+                    resumePolling = forcePlace,
+                )
+                return
+            }
         }
 
         val placed = CallLauncher.placeCall(
@@ -151,6 +208,99 @@ class CallTriggerService : Service() {
         if (scheduledCall.useSpeakerphone) {
             enableSpeakerphoneWithRetries()
         }
+    }
+
+    private fun handleBusyDefer(
+        scheduledCall: ScheduledCall,
+        dayOfWeek: Int,
+        retryAttempt: Int,
+        deferredSinceMillis: Long,
+        resumePolling: Boolean = false,
+    ) {
+        val now = System.currentTimeMillis()
+        val existing = BusyDeferStore.load(this, scheduledCall.id)
+        val promptMinutes = AppSettings(this).getRetrySettings().busyDeferPromptMinutes
+        val plan = BusyDeferLogic.planBusyDefer(
+            nowMillis = now,
+            deferredSinceMillisFromIntent = deferredSinceMillis,
+            existing = existing,
+            scheduledCallId = scheduledCall.id,
+            promptMinutes = promptMinutes,
+            resumePolling = resumePolling,
+        )
+
+        if (plan.phase == BusyDeferLogic.DeferPhase.AWAITING_USER) {
+            Log.i(TAG, "Call ${scheduledCall.id} still awaiting user decision after busy delay")
+            return
+        }
+
+        val state = BusyDeferState(
+            scheduledCallId = scheduledCall.id,
+            dayOfWeek = dayOfWeek,
+            retryAttempt = retryAttempt,
+            deferredSinceMillis = plan.deferredSinceMillis,
+            contactName = scheduledCall.contactName,
+            phoneNumber = scheduledCall.phoneNumber,
+            awaitingUserDecision = plan.awaitingUserDecision,
+        )
+
+        when (plan.phase) {
+            BusyDeferLogic.DeferPhase.FIRST_DELAY_AND_POLL -> {
+                Log.i(TAG, "Deferring call ${scheduledCall.id}: notifying user immediately")
+                BusyDeferStore.save(this, state)
+                BusyDeferNotifier.showDelayed(this, state)
+            }
+
+            BusyDeferLogic.DeferPhase.SHOW_DECISION_PROMPT -> {
+                Log.i(
+                    TAG,
+                    "Call ${scheduledCall.id} delayed over $promptMinutes min; asking user",
+                )
+                BusyDeferStore.save(this, state)
+                BusyDeferNotifier.showDecisionPrompt(this, state, promptMinutes)
+                if (retryAttempt == 0) {
+                    AlarmScheduler(this).scheduleCallDay(scheduledCall, dayOfWeek)
+                }
+                return
+            }
+
+            BusyDeferLogic.DeferPhase.CONTINUE_POLL -> {
+                BusyDeferStore.save(this, state)
+                if (resumePolling) {
+                    BusyDeferNotifier.showDelayed(this, state)
+                }
+            }
+
+            BusyDeferLogic.DeferPhase.AWAITING_USER -> return
+        }
+
+        if (!plan.scheduleBusyPoll) return
+
+        Log.i(
+            TAG,
+            "Deferring call ${scheduledCall.id} (attempt $retryAttempt): line or watch session busy",
+        )
+        val deferred = AlarmScheduler(this).scheduleRetry(
+            scheduledCallId = scheduledCall.id,
+            dayOfWeek = dayOfWeek,
+            retryAttempt = retryAttempt,
+            delayMs = CallRetryCoordinator.BUSY_DEFER_DELAY_MS,
+            deferredSinceMillis = plan.deferredSinceMillis,
+        )
+        if (retryAttempt == 0) {
+            AlarmScheduler(this).scheduleCallDay(scheduledCall, dayOfWeek)
+        }
+        if (!deferred) {
+            Log.w(TAG, "Failed to schedule busy poll for call ${scheduledCall.id}; prompting user")
+            val awaiting = state.copy(awaitingUserDecision = true)
+            BusyDeferStore.save(this, awaiting)
+            BusyDeferNotifier.showDecisionPrompt(this, awaiting, promptMinutes)
+        }
+    }
+
+    private fun clearBusyDefer(scheduledCallId: Long) {
+        BusyDeferStore.clear(this, scheduledCallId)
+        BusyDeferNotifier.cancel(this, scheduledCallId)
     }
 
     private suspend fun enableSpeakerphoneWithRetries() {
@@ -195,7 +345,9 @@ class CallTriggerService : Service() {
     }
 
     companion object {
+        private const val TAG = "CallTriggerService"
         const val CHANNEL_ID = "autocall_trigger"
+        const val EXTRA_FORCE_PLACE = "extra_force_place"
         private const val NOTIFICATION_ID = 1001
         private const val SPEAKERPHONE_RETRY_COUNT = 5
         private const val SPEAKERPHONE_RETRY_DELAY_MS = 1_500L
@@ -205,11 +357,15 @@ class CallTriggerService : Service() {
             scheduledCallId: Long,
             dayOfWeek: Int,
             retryAttempt: Int = 0,
+            deferredSinceMillis: Long = -1L,
+            forcePlace: Boolean = false,
         ) {
             val intent = Intent(context, CallTriggerService::class.java).apply {
                 putExtra(CallAlarmReceiver.EXTRA_SCHEDULED_CALL_ID, scheduledCallId)
                 putExtra(CallAlarmReceiver.EXTRA_DAY_OF_WEEK, dayOfWeek)
                 putExtra(CallAlarmReceiver.EXTRA_RETRY_ATTEMPT, retryAttempt)
+                putExtra(CallAlarmReceiver.EXTRA_DEFERRED_SINCE_MILLIS, deferredSinceMillis)
+                putExtra(EXTRA_FORCE_PLACE, forcePlace)
             }
             ContextCompat.startForegroundService(context, intent)
         }

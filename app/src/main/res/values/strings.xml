@@ -13,5 +13,15 @@
     <string name="notification_retry_failed_text_unknown">Number: %1$s\nScheduled time: %2$s\nThe call did not last the expected duration after %3$d retries.</string>
     <string name="notification_retry_failed_text_no_retry">Contact: %1$s\nNumber: %2$s\nScheduled time: %3$s\nThe call did not last the expected duration.</string>
     <string name="notification_retry_failed_text_unknown_no_retry">Number: %1$s\nScheduled time: %2$s\nThe call did not last the expected duration.</string>
+    <string name="notification_busy_defer_channel_name">Delayed calls</string>
+    <string name="notification_busy_defer_channel_description">Alerts when a scheduled call is waiting because another call is in progress</string>
+    <string name="notification_busy_defer_delayed_title">Call to %1$s delayed</string>
+    <string name="notification_busy_defer_delayed_text">Waiting for the current call to end</string>
+    <string name="notification_busy_defer_delayed_details">Scheduled call to %1$s (%2$s) is delayed because another call is in progress. AutoCall will place it when the line is free.</string>
+    <string name="notification_busy_defer_prompt_title">Still delayed: %1$s</string>
+    <string name="notification_busy_defer_prompt_text">Delayed over %1$d min. Place now or skip?</string>
+    <string name="notification_busy_defer_prompt_details">Scheduled call to %1$s (%2$s) has been delayed for over %3$d minutes because another call is in progress.\n\nPlace the call now, or skip it?</string>
+    <string name="notification_busy_defer_action_place">Place call</string>
+    <string name="notification_busy_defer_action_skip">Skip</string>
     <string name="next_call_prefix">Next call:</string>
 </resources>

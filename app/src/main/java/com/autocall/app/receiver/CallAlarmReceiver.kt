@@ -18,7 +18,14 @@ class CallAlarmReceiver : BroadcastReceiver() {
         if (!PermissionHelper.hasCallPhonePermission(context)) return
 
         val retryAttempt = intent.getIntExtra(EXTRA_RETRY_ATTEMPT, 0)
-        CallTriggerService.start(context, scheduledCallId, dayOfWeek, retryAttempt)
+        val deferredSinceMillis = intent.getLongExtra(EXTRA_DEFERRED_SINCE_MILLIS, -1L)
+        CallTriggerService.start(
+            context = context,
+            scheduledCallId = scheduledCallId,
+            dayOfWeek = dayOfWeek,
+            retryAttempt = retryAttempt,
+            deferredSinceMillis = deferredSinceMillis,
+        )
     }
 
     companion object {
@@ -26,5 +33,6 @@ class CallAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_SCHEDULED_CALL_ID = "extra_scheduled_call_id"
         const val EXTRA_DAY_OF_WEEK = "extra_day_of_week"
         const val EXTRA_RETRY_ATTEMPT = "extra_retry_attempt"
+        const val EXTRA_DEFERRED_SINCE_MILLIS = "extra_deferred_since_millis"
     }
 }

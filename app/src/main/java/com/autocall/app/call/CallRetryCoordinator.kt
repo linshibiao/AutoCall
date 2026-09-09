@@ -1,5 +1,6 @@
 package com.autocall.app.call
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -11,6 +12,7 @@ import com.autocall.app.data.CallDurationLog
 import com.autocall.app.data.RetrySettings
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.scheduler.AlarmScheduler
+import com.autocall.app.util.PermissionHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,13 +40,58 @@ object CallRetryCoordinator {
         }
     }
 
-    fun beginSession(context: Context, scheduledCall: ScheduledCall, dayOfWeek: Int) {
+    /**
+     * True when dialing now would interrupt another call or steal another call's watch session.
+     * [forcePlace] skips the telephony busy check (user chose Place) but still blocks when a
+     * different AutoCall watch session owns the slot.
+     */
+    fun shouldDeferDial(
+        context: Context,
+        scheduledCallId: Long,
+        retryAttempt: Int,
+        forcePlace: Boolean = false,
+    ): Boolean {
+        val appContext = context.applicationContext
+        val activeSession = synchronized(lock) {
+            CallWatchStore.load(appContext)?.let {
+                BusyDeferLogic.ActiveWatchSnapshot(
+                    scheduledCallId = it.scheduledCallId,
+                    phase = it.phase,
+                )
+            }
+        }
+        return BusyDeferLogic.shouldDeferDial(
+            lineBusy = isLineBusy(appContext),
+            forcePlace = forcePlace,
+            activeSession = activeSession,
+            scheduledCallId = scheduledCallId,
+            retryAttempt = retryAttempt,
+        )
+    }
+
+    /**
+     * Starts a new watch session. Returns false if a *different* call's session is already
+     * active. Same-call sessions are reclaimed (stale/orphan after process death).
+     */
+    fun beginSession(context: Context, scheduledCall: ScheduledCall, dayOfWeek: Int): Boolean {
         val expected = scheduledCall.expectedDurationSeconds?.takeIf { it > 0 } ?: 0
 
         val appContext = context.applicationContext
         synchronized(lock) {
             CallWatchStore.load(appContext)?.let { existing ->
+                if (existing.scheduledCallId != scheduledCall.id) {
+                    Log.w(
+                        TAG,
+                        "Refusing to begin session for call ${scheduledCall.id}; " +
+                            "active session ${existing.scheduledCallId} phase=${existing.phase}",
+                    )
+                    return false
+                }
                 AlarmScheduler(appContext).cancelRetry(existing.scheduledCallId)
+                Log.i(
+                    TAG,
+                    "Reclaiming watch session for call ${scheduledCall.id} (was ${existing.phase})",
+                )
             }
             AlarmScheduler(appContext).cancelRetry(scheduledCall.id)
             CallWatchStore.save(
@@ -72,6 +119,7 @@ object CallRetryCoordinator {
                 ),
             )
             ensureMonitorLocked(appContext)
+            return true
         }
     }
 
@@ -80,17 +128,34 @@ object CallRetryCoordinator {
         val timeoutSeconds: Int
         val sessionId: Long
         val placedAt: Long
+        val alreadyOffHook: Boolean
         synchronized(lock) {
             val session = CallWatchStore.load(appContext) ?: return
             val placedAtMillis = System.currentTimeMillis()
-            CallWatchStore.save(
-                appContext,
-                session.copy(
-                    phase = CallWatchPhase.WAITING_OFFHOOK,
-                    placedAtMillis = placedAtMillis,
-                    offHookAtMillis = null,
-                ),
-            )
+            // Taking over / dialing while already off-hook never delivers a second OFFHOOK
+            // transition, so start timing immediately or duration + redial never run.
+            alreadyOffHook = currentCallState(appContext) == TelephonyManager.CALL_STATE_OFFHOOK
+            if (alreadyOffHook) {
+                CallWatchStore.save(
+                    appContext,
+                    session.copy(
+                        phase = CallWatchPhase.IN_CALL,
+                        placedAtMillis = placedAtMillis,
+                        offHookAtMillis = placedAtMillis,
+                    ),
+                )
+                startSpeakerphoneLocked(appContext, session)
+                Log.d(TAG, "Call ${session.scheduledCallId} already off-hook; timing from place")
+            } else {
+                CallWatchStore.save(
+                    appContext,
+                    session.copy(
+                        phase = CallWatchPhase.WAITING_OFFHOOK,
+                        placedAtMillis = placedAtMillis,
+                        offHookAtMillis = null,
+                    ),
+                )
+            }
             ensureMonitorLocked(appContext)
             timeoutSeconds = if (session.expectedDurationSeconds > 0) {
                 session.expectedDurationSeconds + session.successWindowSeconds + 15
@@ -100,7 +165,9 @@ object CallRetryCoordinator {
             sessionId = session.scheduledCallId
             placedAt = placedAtMillis
         }
-        startWatchTimeout(appContext, sessionId, placedAt, timeoutSeconds)
+        if (!alreadyOffHook) {
+            startWatchTimeout(appContext, sessionId, placedAt, timeoutSeconds)
+        }
     }
 
     fun onPlacementFailed(context: Context) {
@@ -132,6 +199,17 @@ object CallRetryCoordinator {
                 FailureNotifier.show(appContext, session)
                 Log.w(TAG, "Aborted call ${session.scheduledCallId} after retries; notified user")
             }
+        }
+    }
+
+    /** Clears the watch session only when it belongs to [scheduledCallId]. */
+    fun abortIfSessionFor(context: Context, scheduledCallId: Long) {
+        val appContext = context.applicationContext
+        val matches = synchronized(lock) {
+            CallWatchStore.load(appContext)?.scheduledCallId == scheduledCallId
+        }
+        if (matches) {
+            abort(appContext)
         }
     }
 
@@ -342,11 +420,11 @@ object CallRetryCoordinator {
         session: CallWatchSession,
         settings: RetrySettings,
         atMillis: Long = System.currentTimeMillis(),
-    ): Boolean {
-        val deadlineMillis = session.originalScheduleMillis +
-            settings.retryDeadlineMinutes * 60_000L
-        return atMillis >= deadlineMillis
-    }
+    ): Boolean = BusyDeferLogic.isPastRetryDeadline(
+        originalScheduleMillis = session.originalScheduleMillis,
+        retryDeadlineMinutes = settings.retryDeadlineMinutes,
+        atMillis = atMillis,
+    )
 
     private fun originalScheduleMillis(dayOfWeek: Int, hour: Int, minute: Int): Long {
         val now = Calendar.getInstance()
@@ -399,8 +477,25 @@ object CallRetryCoordinator {
         }
     }
 
+    fun isLineBusy(context: Context): Boolean {
+        val state = currentCallState(context.applicationContext)
+        return state == TelephonyManager.CALL_STATE_OFFHOOK ||
+            state == TelephonyManager.CALL_STATE_RINGING
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun currentCallState(context: Context): Int {
+        if (!PermissionHelper.hasReadPhoneStatePermission(context)) {
+            return TelephonyManager.CALL_STATE_IDLE
+        }
+        val telephonyManager =
+            context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+        return telephonyManager.callState
+    }
+
     private const val TAG = "CallRetryCoordinator"
     private const val RETRY_DELAY_MS = 3_000L
+    const val BUSY_DEFER_DELAY_MS = 10_000L
     private const val STALE_IDLE_GRACE_MS = 1_500L
     private const val TWELVE_HOURS_MS = 12 * 60 * 60 * 1000L
     private const val DEFAULT_DURATION_ONLY_TIMEOUT_SECONDS = 30 * 60

@@ -26,7 +26,11 @@ import com.autocall.app.data.RetrySettings
 fun SettingsDialog(
     retrySettings: RetrySettings,
     onDismiss: () -> Unit,
-    onSave: (maxRetries: Int, retryDeadlineMinutes: Int) -> Unit,
+    onSave: (
+        maxRetries: Int,
+        retryDeadlineMinutes: Int,
+        busyDeferPromptMinutes: Int,
+    ) -> Unit,
 ) {
     var retriesText by remember(retrySettings) {
         mutableStateOf(retrySettings.maxRetries.toString())
@@ -34,14 +38,18 @@ fun SettingsDialog(
     var deadlineText by remember(retrySettings) {
         mutableStateOf(retrySettings.retryDeadlineMinutes.toString())
     }
+    var busyDeferText by remember(retrySettings) {
+        mutableStateOf(retrySettings.busyDeferPromptMinutes.toString())
+    }
 
     val retries = retriesText.toIntOrNull()
     val deadlineMinutes = deadlineText.toIntOrNull()
-    val canSave = retries != null && deadlineMinutes != null
+    val busyDeferMinutes = busyDeferText.toIntOrNull()
+    val canSave = retries != null && deadlineMinutes != null && busyDeferMinutes != null
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Retry settings") },
+        title = { Text("Call settings") },
         text = {
             Column(
                 modifier = Modifier
@@ -50,7 +58,7 @@ fun SettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    text = "These settings apply when a scheduled call has an expected duration.",
+                    text = "These settings control redials and what happens when a scheduled call is delayed by another call.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -90,13 +98,31 @@ fun SettingsDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
+
+                OutlinedTextField(
+                    value = busyDeferText,
+                    onValueChange = { value ->
+                        if (value.all(Char::isDigit) && value.length <= 3) {
+                            busyDeferText = value
+                        }
+                    },
+                    label = { Text("Busy delay prompt (minutes)") },
+                    supportingText = {
+                        Text(
+                            "If a scheduled call is delayed because another call is in progress, ask whether to place or skip after this many minutes. Default is ${RetrySettings.DEFAULT_BUSY_DEFER_PROMPT_MINUTES}.",
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (retries != null && deadlineMinutes != null) {
-                        onSave(retries, deadlineMinutes)
+                    if (retries != null && deadlineMinutes != null && busyDeferMinutes != null) {
+                        onSave(retries, deadlineMinutes, busyDeferMinutes)
                     }
                 },
                 enabled = canSave,

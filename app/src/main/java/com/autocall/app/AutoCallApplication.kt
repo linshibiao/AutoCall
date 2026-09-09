@@ -1,6 +1,7 @@
 package com.autocall.app
 
 import android.app.Application
+import com.autocall.app.call.BusyDeferNotifier
 import com.autocall.app.call.CallRetryCoordinator
 import com.autocall.app.call.FailureNotifier
 import com.autocall.app.data.AppDatabase
@@ -22,5 +23,6 @@ class AutoCallApplication : Application() {
         }
         CallRetryCoordinator.restore(this)
         FailureNotifier.ensureChannel(this)
+        BusyDeferNotifier.ensureChannel(this)
     }
 }
