@@ -22,13 +22,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -94,7 +90,7 @@ fun DashboardScreen(
                 }
             } else {
                 items(scheduledCalls, key = { it.scheduledCall.id }) { item ->
-                    SwipeToDeleteCallCard(
+                    ScheduledCallCard(
                         scheduledCall = item.scheduledCall,
                         recentDurationsSeconds = item.recentDurationsSeconds,
                         onEditClick = { onEditClick(item.scheduledCall) },
@@ -104,53 +100,6 @@ fun DashboardScreen(
                 }
             }
         }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SwipeToDeleteCallCard(
-    scheduledCall: ScheduledCall,
-    recentDurationsSeconds: List<Int>,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onToggleEnabled: (Boolean) -> Unit,
-) {
-    val dismissState = rememberSwipeToDismissBoxState()
-
-    LaunchedEffect(dismissState.currentValue) {
-        if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
-            onDeleteClick()
-            dismissState.reset()
-        }
-    }
-
-    SwipeToDismissBox(
-        state = dismissState,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            }
-        },
-    ) {
-        ScheduledCallCard(
-            scheduledCall = scheduledCall,
-            recentDurationsSeconds = recentDurationsSeconds,
-            onEditClick = onEditClick,
-            onDeleteClick = onDeleteClick,
-            onToggleEnabled = onToggleEnabled,
-        )
     }
 }
 
