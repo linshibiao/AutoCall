@@ -33,11 +33,14 @@ object CallRetryCoordinator {
 
     fun restore(context: Context) {
         val appContext = context.applicationContext
-        synchronized(lock) {
-            if (CallWatchStore.load(appContext) != null) {
+        val hasSession = synchronized(lock) {
+            val session = CallWatchStore.load(appContext)
+            if (session != null) {
                 ensureMonitorLocked(appContext)
             }
+            session != null
         }
+        ScreenTimeoutHelper.syncWithWatchSession(appContext, hasActiveWatchSession = hasSession)
     }
 
     /**
@@ -200,6 +203,7 @@ object CallRetryCoordinator {
                 Log.w(TAG, "Aborted call ${session.scheduledCallId} after retries; notified user")
             }
         }
+        ScreenTimeoutHelper.release(appContext)
     }
 
     /** Clears the watch session only when it belongs to [scheduledCallId]. */
@@ -290,10 +294,7 @@ object CallRetryCoordinator {
                     TAG,
                     "Call ${session.scheduledCallId} lasted ${actualDurationSeconds}s (duration tracking only)",
                 )
-                stopSpeakerphoneLocked()
-                stopWatchTimeoutLocked()
-                stopMonitorLocked()
-                CallWatchStore.clear(appContext)
+                finishCampaignLocked(appContext)
                 return
             }
 
@@ -309,10 +310,7 @@ object CallRetryCoordinator {
 
             if (withinWindow) {
                 AlarmScheduler(appContext).cancelRetry(session.scheduledCallId)
-                stopSpeakerphoneLocked()
-                stopWatchTimeoutLocked()
-                stopMonitorLocked()
-                CallWatchStore.clear(appContext)
+                finishCampaignLocked(appContext)
                 Log.d(TAG, "Call ${session.scheduledCallId} matched expected duration")
                 return
             }
@@ -344,12 +342,17 @@ object CallRetryCoordinator {
         }
     }
 
-    private fun giveUpLocked(appContext: Context, session: CallWatchSession, reason: String) {
-        AlarmScheduler(appContext).cancelRetry(session.scheduledCallId)
+    private fun finishCampaignLocked(appContext: Context) {
         stopSpeakerphoneLocked()
         stopWatchTimeoutLocked()
         stopMonitorLocked()
         CallWatchStore.clear(appContext)
+        ScreenTimeoutHelper.release(appContext)
+    }
+
+    private fun giveUpLocked(appContext: Context, session: CallWatchSession, reason: String) {
+        AlarmScheduler(appContext).cancelRetry(session.scheduledCallId)
+        finishCampaignLocked(appContext)
         FailureNotifier.show(appContext, session)
         Log.w(TAG, "Giving up on call ${session.scheduledCallId}: $reason")
     }

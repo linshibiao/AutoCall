@@ -67,6 +67,9 @@ object PermissionHelper {
         return powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }
 
+    fun canWriteSettings(context: Context): Boolean =
+        Settings.System.canWrite(context.applicationContext)
+
     fun createExactAlarmSettingsIntent(context: Context): Intent =
         Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
             data = Uri.parse("package:${context.packageName}")
@@ -75,5 +78,11 @@ object PermissionHelper {
     fun createBatteryOptimizationIntent(context: Context): Intent =
         Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
             data = Uri.parse("package:${context.packageName}")
+        }
+
+    fun createWriteSettingsIntent(context: Context): Intent =
+        Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+            data = Uri.parse("package:${context.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 }

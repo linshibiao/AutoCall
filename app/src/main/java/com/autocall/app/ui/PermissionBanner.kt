@@ -110,6 +110,20 @@ fun PermissionBanner(
                 }
             }
 
+            if (!systemStatus.canWriteSettings) {
+                Text(
+                    text = "Allow modifying system settings so AutoCall can keep the screen timeout at 5 minutes while dialing, then restore your original setting.",
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(PermissionHelper.createWriteSettingsIntent(context))
+                    },
+                ) {
+                    Text("Allow modify system settings")
+                }
+            }
+
             OutlinedButton(onClick = onRefresh) {
                 Text("Refresh status")
             }

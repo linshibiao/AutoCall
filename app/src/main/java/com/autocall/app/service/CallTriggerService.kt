@@ -21,6 +21,7 @@ import com.autocall.app.call.BusyDeferState
 import com.autocall.app.call.BusyDeferStore
 import com.autocall.app.call.CallLauncher
 import com.autocall.app.call.CallRetryCoordinator
+import com.autocall.app.call.ScreenTimeoutHelper
 import com.autocall.app.call.SpeakerphoneHelper
 import com.autocall.app.data.AppDatabase
 import com.autocall.app.data.AppSettings
@@ -183,22 +184,34 @@ class CallTriggerService : Service() {
             }
         }
 
-        val placed = CallLauncher.placeCall(
-            this,
-            scheduledCall.phoneNumber,
-            scheduledCall.useSpeakerphone,
-        )
+        // Keep the screen from timing out during dial + retries (restored when campaign ends).
+        ScreenTimeoutHelper.acquire(this)
+
+        val placed = try {
+            CallLauncher.placeCall(
+                this,
+                scheduledCall.phoneNumber,
+                scheduledCall.useSpeakerphone,
+            )
+        } catch (error: Exception) {
+            Log.e(TAG, "placeCall threw for call ${scheduledCall.id}", error)
+            false
+        }
         if (!placed) {
             if (canTrackDuration && PermissionHelper.hasCallPhonePermission(this)) {
                 CallRetryCoordinator.onPlacementFailed(this)
             } else if (canTrackDuration) {
                 CallRetryCoordinator.abort(this)
+            } else {
+                ScreenTimeoutHelper.release(this)
             }
             return
         }
 
         if (canTrackDuration) {
             CallRetryCoordinator.onCallPlaced(this)
+        } else {
+            ScreenTimeoutHelper.releaseWhenCallCompletes(this)
         }
 
         if (retryAttempt == 0) {

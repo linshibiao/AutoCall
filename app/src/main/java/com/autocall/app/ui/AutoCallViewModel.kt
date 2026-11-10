@@ -31,6 +31,7 @@ data class SystemStatus(
     val hasNotificationPermission: Boolean = true,
     val canScheduleExactAlarms: Boolean = true,
     val isIgnoringBatteryOptimizations: Boolean = true,
+    val canWriteSettings: Boolean = true,
 ) {
     val hasAllRuntimePermissions: Boolean
         get() = hasCallPhonePermission &&
@@ -41,7 +42,8 @@ data class SystemStatus(
     val needsAttention: Boolean
         get() = !hasAllRuntimePermissions ||
             !canScheduleExactAlarms ||
-            !isIgnoringBatteryOptimizations
+            !isIgnoringBatteryOptimizations ||
+            !canWriteSettings
 }
 
 class AutoCallViewModel(
@@ -92,6 +94,7 @@ class AutoCallViewModel(
             hasNotificationPermission = PermissionHelper.hasNotificationPermission(context),
             canScheduleExactAlarms = PermissionHelper.canScheduleExactAlarms(context),
             isIgnoringBatteryOptimizations = PermissionHelper.isIgnoringBatteryOptimizations(context),
+            canWriteSettings = PermissionHelper.canWriteSettings(context),
         )
         if (_systemStatus.value.hasAllRuntimePermissions &&
             _systemStatus.value.canScheduleExactAlarms
