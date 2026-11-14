@@ -11,10 +11,12 @@ class RetrySettingsCoerceTest {
             maxRetries = 3,
             retryDeadlineMinutes = 10,
             busyDeferPromptMinutes = 5,
+            retryDelaySeconds = 5,
         )
         assertEquals(3, settings.maxRetries)
         assertEquals(10, settings.retryDeadlineMinutes)
         assertEquals(5, settings.busyDeferPromptMinutes)
+        assertEquals(5, settings.retryDelaySeconds)
     }
 
     @Test
@@ -26,6 +28,18 @@ class RetrySettingsCoerceTest {
         assertEquals(
             RetrySettings.MAX_BUSY_DEFER_PROMPT_MINUTES,
             RetrySettings.coerce(3, 10, 999).busyDeferPromptMinutes,
+        )
+    }
+
+    @Test
+    fun coerce_clampsRetryDelay_toMinAndMax() {
+        assertEquals(
+            RetrySettings.MIN_RETRY_DELAY_SECONDS,
+            RetrySettings.coerce(3, 10, 5, 0).retryDelaySeconds,
+        )
+        assertEquals(
+            RetrySettings.MAX_RETRY_DELAY_SECONDS,
+            RetrySettings.coerce(3, 10, 5, 999).retryDelaySeconds,
         )
     }
 
@@ -45,5 +59,6 @@ class RetrySettingsCoerceTest {
         assertEquals(3, RetrySettings.DEFAULT_MAX_RETRIES)
         assertEquals(10, RetrySettings.DEFAULT_RETRY_DEADLINE_MINUTES)
         assertEquals(5, RetrySettings.DEFAULT_BUSY_DEFER_PROMPT_MINUTES)
+        assertEquals(5, RetrySettings.DEFAULT_RETRY_DELAY_SECONDS)
     }
 }

@@ -33,6 +33,7 @@ class AppSettingsTest {
             RetrySettings.DEFAULT_BUSY_DEFER_PROMPT_MINUTES,
             settings.busyDeferPromptMinutes,
         )
+        assertEquals(RetrySettings.DEFAULT_RETRY_DELAY_SECONDS, settings.retryDelaySeconds)
     }
 
     @Test
@@ -42,10 +43,13 @@ class AppSettingsTest {
             maxRetries = 4,
             retryDeadlineMinutes = 15,
             busyDeferPromptMinutes = 0,
+            retryDelaySeconds = 0,
         )
         assertEquals(1, saved.busyDeferPromptMinutes)
         assertEquals(1, settings.getRetrySettings().busyDeferPromptMinutes)
         assertEquals(4, settings.getRetrySettings().maxRetries)
         assertEquals(15, settings.getRetrySettings().retryDeadlineMinutes)
+        assertEquals(1, saved.retryDelaySeconds)
+        assertEquals(1, settings.getRetrySettings().retryDelaySeconds)
     }
 }

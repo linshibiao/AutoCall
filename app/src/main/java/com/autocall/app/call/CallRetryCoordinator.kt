@@ -315,7 +315,8 @@ object CallRetryCoordinator {
                 return
             }
 
-            if (isPastRetryDeadline(session, settings, System.currentTimeMillis() + RETRY_DELAY_MS)) {
+            val retryDelayMs = settings.retryDelaySeconds * 1_000L
+            if (isPastRetryDeadline(session, settings, System.currentTimeMillis() + retryDelayMs)) {
                 giveUpLocked(appContext, session, "past retry deadline")
                 return
             }
@@ -331,7 +332,7 @@ object CallRetryCoordinator {
                     scheduledCallId = next.scheduledCallId,
                     dayOfWeek = next.dayOfWeek,
                     retryAttempt = next.retryAttempt,
-                    delayMs = RETRY_DELAY_MS,
+                    delayMs = retryDelayMs,
                 )
                 if (!scheduled) {
                     giveUpLocked(appContext, session, "failed to schedule retry")
@@ -497,7 +498,6 @@ object CallRetryCoordinator {
     }
 
     private const val TAG = "CallRetryCoordinator"
-    private const val RETRY_DELAY_MS = 3_000L
     const val BUSY_DEFER_DELAY_MS = 10_000L
     private const val STALE_IDLE_GRACE_MS = 1_500L
     private const val TWELVE_HOURS_MS = 12 * 60 * 60 * 1000L

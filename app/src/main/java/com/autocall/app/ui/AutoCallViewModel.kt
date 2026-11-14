@@ -165,11 +165,13 @@ class AutoCallViewModel(
         maxRetries: Int,
         retryDeadlineMinutes: Int,
         busyDeferPromptMinutes: Int,
+        retryDelaySeconds: Int,
     ) {
         _retrySettings.value = appSettings.setRetrySettings(
             maxRetries = maxRetries,
             retryDeadlineMinutes = retryDeadlineMinutes,
             busyDeferPromptMinutes = busyDeferPromptMinutes,
+            retryDelaySeconds = retryDelaySeconds,
         )
     }
 }

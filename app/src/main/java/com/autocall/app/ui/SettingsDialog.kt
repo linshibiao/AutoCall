@@ -30,6 +30,7 @@ fun SettingsDialog(
         maxRetries: Int,
         retryDeadlineMinutes: Int,
         busyDeferPromptMinutes: Int,
+        retryDelaySeconds: Int,
     ) -> Unit,
 ) {
     var retriesText by remember(retrySettings) {
@@ -41,11 +42,18 @@ fun SettingsDialog(
     var busyDeferText by remember(retrySettings) {
         mutableStateOf(retrySettings.busyDeferPromptMinutes.toString())
     }
+    var retryDelayText by remember(retrySettings) {
+        mutableStateOf(retrySettings.retryDelaySeconds.toString())
+    }
 
     val retries = retriesText.toIntOrNull()
     val deadlineMinutes = deadlineText.toIntOrNull()
     val busyDeferMinutes = busyDeferText.toIntOrNull()
-    val canSave = retries != null && deadlineMinutes != null && busyDeferMinutes != null
+    val retryDelaySeconds = retryDelayText.toIntOrNull()
+    val canSave = retries != null &&
+        deadlineMinutes != null &&
+        busyDeferMinutes != null &&
+        retryDelaySeconds != null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -74,6 +82,24 @@ fun SettingsDialog(
                     supportingText = {
                         Text(
                             "How many times to redial after a duration mismatch. Default is ${RetrySettings.DEFAULT_MAX_RETRIES}.",
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                )
+
+                OutlinedTextField(
+                    value = retryDelayText,
+                    onValueChange = { value ->
+                        if (value.all(Char::isDigit) && value.length <= 3) {
+                            retryDelayText = value
+                        }
+                    },
+                    label = { Text("Retry delay (seconds)") },
+                    supportingText = {
+                        Text(
+                            "Wait this many seconds before redialing after a failed call. Default is ${RetrySettings.DEFAULT_RETRY_DELAY_SECONDS}.",
                         )
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -121,8 +147,13 @@ fun SettingsDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (retries != null && deadlineMinutes != null && busyDeferMinutes != null) {
-                        onSave(retries, deadlineMinutes, busyDeferMinutes)
+                    if (
+                        retries != null &&
+                        deadlineMinutes != null &&
+                        busyDeferMinutes != null &&
+                        retryDelaySeconds != null
+                    ) {
+                        onSave(retries, deadlineMinutes, busyDeferMinutes, retryDelaySeconds)
                     }
                 },
                 enabled = canSave,
