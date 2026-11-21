@@ -21,6 +21,9 @@ data class CallWatchSession(
     val phoneNumber: String,
     val useSpeakerphone: Boolean,
     val successWindowSeconds: Int,
+    val endCallAfterSeconds: Int = 0,
+    /** Set when AutoCall forced the hangup; forces failure/retry when expected duration is set. */
+    val endedByAutoHangup: Boolean = false,
 )
 
 object CallWatchStore {
@@ -53,6 +56,8 @@ object CallWatchStore {
                 KEY_SUCCESS_WINDOW_SECONDS,
                 10,
             ),
+            endCallAfterSeconds = prefs.getInt(KEY_END_CALL_AFTER_SECONDS, 0).coerceAtLeast(0),
+            endedByAutoHangup = prefs.getBoolean(KEY_ENDED_BY_AUTO_HANGUP, false),
         )
     }
 
@@ -70,6 +75,8 @@ object CallWatchStore {
             .putString(KEY_PHONE_NUMBER, session.phoneNumber)
             .putBoolean(KEY_USE_SPEAKERPHONE, session.useSpeakerphone)
             .putInt(KEY_SUCCESS_WINDOW_SECONDS, session.successWindowSeconds)
+            .putInt(KEY_END_CALL_AFTER_SECONDS, session.endCallAfterSeconds)
+            .putBoolean(KEY_ENDED_BY_AUTO_HANGUP, session.endedByAutoHangup)
             .commit()
     }
 
@@ -93,4 +100,6 @@ object CallWatchStore {
     private const val KEY_PHONE_NUMBER = "phone_number"
     private const val KEY_USE_SPEAKERPHONE = "use_speakerphone"
     private const val KEY_SUCCESS_WINDOW_SECONDS = "success_window_seconds"
+    private const val KEY_END_CALL_AFTER_SECONDS = "end_call_after_seconds"
+    private const val KEY_ENDED_BY_AUTO_HANGUP = "ended_by_auto_hangup"
 }

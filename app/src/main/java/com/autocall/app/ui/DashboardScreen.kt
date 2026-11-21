@@ -34,6 +34,7 @@ import com.autocall.app.scheduler.AlarmScheduler
 import com.autocall.app.util.DayOfWeekFormatter
 import com.autocall.app.util.DaysOfWeek
 import com.autocall.app.util.DurationFormatter
+import com.autocall.app.util.RecentCallDuration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,7 +93,7 @@ fun DashboardScreen(
                 items(scheduledCalls, key = { it.scheduledCall.id }) { item ->
                     ScheduledCallCard(
                         scheduledCall = item.scheduledCall,
-                        recentDurationsSeconds = item.recentDurationsSeconds,
+                        recentCalls = item.recentCalls,
                         onEditClick = { onEditClick(item.scheduledCall) },
                         onDeleteClick = { onDeleteClick(item.scheduledCall) },
                         onToggleEnabled = { enabled -> onToggleEnabled(item.scheduledCall, enabled) },
@@ -106,7 +107,7 @@ fun DashboardScreen(
 @Composable
 private fun ScheduledCallCard(
     scheduledCall: ScheduledCall,
-    recentDurationsSeconds: List<Int>,
+    recentCalls: List<RecentCallDuration>,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
@@ -168,8 +169,16 @@ private fun ScheduledCallCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    val endCallAfter = scheduledCall.endCallAfterSeconds
+                    if (endCallAfter != null && endCallAfter > 0) {
+                        Text(
+                            text = "End call after: ${DurationFormatter.format(endCallAfter)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
-                        text = DurationFormatter.formatRecent(recentDurationsSeconds),
+                        text = DurationFormatter.formatRecent(recentCalls),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -20,7 +20,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
-import kotlin.math.abs
 
 object CallRetryCoordinator {
 
@@ -30,6 +29,7 @@ object CallRetryCoordinator {
     private var monitor: CallStateMonitor? = null
     private var speakerphoneJob: Job? = null
     private var watchTimeoutJob: Job? = null
+    private var endCallJob: Job? = null
 
     fun restore(context: Context) {
         val appContext = context.applicationContext
@@ -37,6 +37,10 @@ object CallRetryCoordinator {
             val session = CallWatchStore.load(appContext)
             if (session != null) {
                 ensureMonitorLocked(appContext)
+                // Process death drops in-memory jobs; reschedule auto-hangup with remaining time.
+                if (session.phase == CallWatchPhase.IN_CALL && session.endCallAfterSeconds > 0) {
+                    startEndCallTimerLocked(appContext, session)
+                }
             }
             session != null
         }
@@ -119,6 +123,11 @@ object CallRetryCoordinator {
                         ScheduledCall.MIN_SUCCESS_WINDOW_SECONDS,
                         ScheduledCall.MAX_SUCCESS_WINDOW_SECONDS,
                     ),
+                    endCallAfterSeconds = ScheduledCall.normalizeEndCallAfterSeconds(
+                        endCallAfterSeconds = scheduledCall.endCallAfterSeconds,
+                        expectedDurationSeconds = scheduledCall.expectedDurationSeconds,
+                        successWindowSeconds = scheduledCall.successWindowSeconds,
+                    ) ?: 0,
                 ),
             )
             ensureMonitorLocked(appContext)
@@ -139,15 +148,15 @@ object CallRetryCoordinator {
             // transition, so start timing immediately or duration + redial never run.
             alreadyOffHook = currentCallState(appContext) == TelephonyManager.CALL_STATE_OFFHOOK
             if (alreadyOffHook) {
-                CallWatchStore.save(
-                    appContext,
-                    session.copy(
-                        phase = CallWatchPhase.IN_CALL,
-                        placedAtMillis = placedAtMillis,
-                        offHookAtMillis = placedAtMillis,
-                    ),
+                val inCall = session.copy(
+                    phase = CallWatchPhase.IN_CALL,
+                    placedAtMillis = placedAtMillis,
+                    offHookAtMillis = placedAtMillis,
+                    endedByAutoHangup = false,
                 )
-                startSpeakerphoneLocked(appContext, session)
+                CallWatchStore.save(appContext, inCall)
+                startSpeakerphoneLocked(appContext, inCall)
+                startEndCallTimerLocked(appContext, inCall)
                 Log.d(TAG, "Call ${session.scheduledCallId} already off-hook; timing from place")
             } else {
                 CallWatchStore.save(
@@ -156,6 +165,7 @@ object CallRetryCoordinator {
                         phase = CallWatchPhase.WAITING_OFFHOOK,
                         placedAtMillis = placedAtMillis,
                         offHookAtMillis = null,
+                        endedByAutoHangup = false,
                     ),
                 )
             }
@@ -195,6 +205,7 @@ object CallRetryCoordinator {
                 AlarmScheduler(appContext).cancelRetry(session.scheduledCallId)
             }
             stopSpeakerphoneLocked()
+            stopEndCallTimerLocked()
             stopWatchTimeoutLocked()
             stopMonitorLocked()
             CallWatchStore.clear(appContext)
@@ -236,15 +247,15 @@ object CallRetryCoordinator {
             when (state) {
                 TelephonyManager.CALL_STATE_OFFHOOK -> {
                     if (session.phase == CallWatchPhase.WAITING_OFFHOOK) {
-                        CallWatchStore.save(
-                            appContext,
-                            session.copy(
-                                phase = CallWatchPhase.IN_CALL,
-                                offHookAtMillis = now,
-                            ),
+                        val inCall = session.copy(
+                            phase = CallWatchPhase.IN_CALL,
+                            offHookAtMillis = now,
+                            endedByAutoHangup = false,
                         )
+                        CallWatchStore.save(appContext, inCall)
                         Log.d(TAG, "Call ${session.scheduledCallId} went off-hook")
-                        startSpeakerphoneLocked(appContext, session)
+                        startSpeakerphoneLocked(appContext, inCall)
+                        startEndCallTimerLocked(appContext, inCall)
                     }
                     null
                 }
@@ -253,6 +264,7 @@ object CallRetryCoordinator {
                     when (session.phase) {
                         CallWatchPhase.IN_CALL -> {
                             stopSpeakerphoneLocked()
+                            stopEndCallTimerLocked()
                             stopWatchTimeoutLocked()
                             val startedAt = session.offHookAtMillis ?: session.placedAtMillis
                             ((now - startedAt) / 1_000L).toInt().coerceAtLeast(0)
@@ -260,6 +272,7 @@ object CallRetryCoordinator {
 
                         CallWatchPhase.WAITING_OFFHOOK -> {
                             stopSpeakerphoneLocked()
+                            stopEndCallTimerLocked()
                             if (now - session.placedAtMillis < STALE_IDLE_GRACE_MS) {
                                 null
                             } else {
@@ -287,7 +300,12 @@ object CallRetryCoordinator {
             val session = CallWatchStore.load(appContext) ?: return
             if (session.phase == CallWatchPhase.RETRY_PENDING) return
 
-            recordDuration(appContext, session.scheduledCallId, actualDurationSeconds)
+            recordDuration(
+                appContext,
+                session.scheduledCallId,
+                actualDurationSeconds,
+                endedByAutoHangup = session.endedByAutoHangup,
+            )
 
             if (session.expectedDurationSeconds <= 0) {
                 Log.d(
@@ -299,20 +317,32 @@ object CallRetryCoordinator {
             }
 
             val settings = AppSettings(appContext).getRetrySettings()
-            val delta = abs(actualDurationSeconds - session.expectedDurationSeconds)
-            val withinWindow = delta <= session.successWindowSeconds
+            val successful = CallOutcomeLogic.isSuccessful(
+                actualDurationSeconds = actualDurationSeconds,
+                expectedDurationSeconds = session.expectedDurationSeconds,
+                successWindowSeconds = session.successWindowSeconds,
+                endedByAutoHangup = session.endedByAutoHangup,
+            )
 
             Log.d(
                 TAG,
                 "Call ${session.scheduledCallId} lasted ${actualDurationSeconds}s " +
-                    "(expected ${session.expectedDurationSeconds}s ±${session.successWindowSeconds}s)",
+                    "(expected ${session.expectedDurationSeconds}s ±${session.successWindowSeconds}s)" +
+                    if (session.endedByAutoHangup) " [auto-hangup]" else "",
             )
 
-            if (withinWindow) {
+            if (successful) {
                 AlarmScheduler(appContext).cancelRetry(session.scheduledCallId)
                 finishCampaignLocked(appContext)
                 Log.d(TAG, "Call ${session.scheduledCallId} matched expected duration")
                 return
+            }
+
+            if (session.endedByAutoHangup) {
+                Log.i(
+                    TAG,
+                    "Call ${session.scheduledCallId} ended by auto-hangup; treating as failure",
+                )
             }
 
             val retryDelayMs = settings.retryDelaySeconds * 1_000L
@@ -326,6 +356,7 @@ object CallRetryCoordinator {
                     retryAttempt = session.retryAttempt + 1,
                     phase = CallWatchPhase.RETRY_PENDING,
                     offHookAtMillis = null,
+                    endedByAutoHangup = false,
                 )
                 CallWatchStore.save(appContext, next)
                 val scheduled = AlarmScheduler(appContext).scheduleRetry(
@@ -345,6 +376,7 @@ object CallRetryCoordinator {
 
     private fun finishCampaignLocked(appContext: Context) {
         stopSpeakerphoneLocked()
+        stopEndCallTimerLocked()
         stopWatchTimeoutLocked()
         stopMonitorLocked()
         CallWatchStore.clear(appContext)
@@ -358,7 +390,12 @@ object CallRetryCoordinator {
         Log.w(TAG, "Giving up on call ${session.scheduledCallId}: $reason")
     }
 
-    private fun recordDuration(context: Context, scheduledCallId: Long, durationSeconds: Int) {
+    private fun recordDuration(
+        context: Context,
+        scheduledCallId: Long,
+        durationSeconds: Int,
+        endedByAutoHangup: Boolean,
+    ) {
         scope.launch(Dispatchers.IO) {
             runCatching {
                 val dao = AppDatabase.getInstance(context).callDurationLogDao()
@@ -367,6 +404,7 @@ object CallRetryCoordinator {
                         scheduledCallId = scheduledCallId,
                         durationSeconds = durationSeconds,
                         recordedAtMillis = System.currentTimeMillis(),
+                        endedByAutoHangup = endedByAutoHangup,
                     ),
                 )
                 val ids = dao.idsForCall(scheduledCallId)
@@ -400,6 +438,59 @@ object CallRetryCoordinator {
     private fun stopWatchTimeoutLocked() {
         watchTimeoutJob?.cancel()
         watchTimeoutJob = null
+    }
+
+    private fun startEndCallTimerLocked(context: Context, session: CallWatchSession) {
+        stopEndCallTimerLocked()
+        val endAfterSeconds = session.endCallAfterSeconds
+        val offHookAt = session.offHookAtMillis ?: return
+        val delayMs = EndCallTimerLogic.remainingDelayMs(
+            endCallAfterSeconds = endAfterSeconds,
+            offHookAtMillis = offHookAt,
+            nowMillis = System.currentTimeMillis(),
+        ) ?: return
+        val scheduledCallId = session.scheduledCallId
+        val appContext = context.applicationContext
+        endCallJob = scope.launch {
+            delay(delayMs)
+            val marked = synchronized(lock) {
+                val current = CallWatchStore.load(appContext) ?: return@synchronized false
+                if (current.scheduledCallId != scheduledCallId) return@synchronized false
+                if (current.phase != CallWatchPhase.IN_CALL) return@synchronized false
+                if (current.offHookAtMillis != offHookAt) return@synchronized false
+                // Natural hangup in the same window should not be labeled auto-hangup.
+                if (currentCallState(appContext) != TelephonyManager.CALL_STATE_OFFHOOK) {
+                    return@synchronized false
+                }
+                CallWatchStore.save(appContext, current.copy(endedByAutoHangup = true))
+                true
+            }
+            if (!marked) return@launch
+            Log.i(
+                TAG,
+                "Auto-ending call $scheduledCallId after ${endAfterSeconds}s " +
+                    "(timer delay ${delayMs}ms)",
+            )
+            val ended = CallEnder.endCall(appContext)
+            if (!ended) {
+                // Only clear if the call is still active; otherwise IDLE may already be
+                // evaluating and must keep the forced-failure flag.
+                val stillActive = currentCallState(appContext) == TelephonyManager.CALL_STATE_OFFHOOK
+                synchronized(lock) {
+                    val current = CallWatchStore.load(appContext) ?: return@synchronized
+                    if (current.scheduledCallId != scheduledCallId) return@synchronized
+                    if (current.phase != CallWatchPhase.IN_CALL) return@synchronized
+                    if (!stillActive) return@synchronized
+                    CallWatchStore.save(appContext, current.copy(endedByAutoHangup = false))
+                }
+                Log.w(TAG, "Auto-hangup failed for call $scheduledCallId; cleared failure flag")
+            }
+        }
+    }
+
+    private fun stopEndCallTimerLocked() {
+        endCallJob?.cancel()
+        endCallJob = null
     }
 
     private fun startSpeakerphoneLocked(context: Context, session: CallWatchSession) {

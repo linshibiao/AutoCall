@@ -11,6 +11,7 @@ class SystemStatusTest {
         assertFalse(
             SystemStatus(
                 hasCallPhonePermission = true,
+                hasAnswerPhoneCallsPermission = true,
                 hasReadPhoneStatePermission = true,
                 hasReadContactsPermission = true,
                 hasNotificationPermission = true,
@@ -26,6 +27,7 @@ class SystemStatusTest {
         assertTrue(
             SystemStatus(
                 hasCallPhonePermission = true,
+                hasAnswerPhoneCallsPermission = true,
                 hasReadPhoneStatePermission = true,
                 hasReadContactsPermission = true,
                 hasNotificationPermission = true,
@@ -41,8 +43,23 @@ class SystemStatusTest {
         assertTrue(
             SystemStatus(
                 hasCallPhonePermission = false,
+                hasAnswerPhoneCallsPermission = true,
                 hasReadPhoneStatePermission = true,
                 hasReadContactsPermission = true,
+                canWriteSettings = true,
+            ).needsAttention,
+        )
+    }
+
+    @Test
+    fun needsAttention_true_whenAnswerPhoneCallsMissing() {
+        assertTrue(
+            SystemStatus(
+                hasCallPhonePermission = true,
+                hasAnswerPhoneCallsPermission = false,
+                hasReadPhoneStatePermission = true,
+                hasReadContactsPermission = true,
+                hasNotificationPermission = true,
                 canWriteSettings = true,
             ).needsAttention,
         )
@@ -52,6 +69,7 @@ class SystemStatusTest {
     fun hasAllRuntimePermissions_ignoresWriteSettings() {
         val status = SystemStatus(
             hasCallPhonePermission = true,
+            hasAnswerPhoneCallsPermission = true,
             hasReadPhoneStatePermission = true,
             hasReadContactsPermission = true,
             hasNotificationPermission = true,

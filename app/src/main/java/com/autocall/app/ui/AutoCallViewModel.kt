@@ -10,6 +10,7 @@ import com.autocall.app.data.ScheduledCall
 import com.autocall.app.data.ScheduledCallRepository
 import com.autocall.app.util.DaysOfWeek
 import com.autocall.app.util.PermissionHelper
+import com.autocall.app.util.RecentCallDuration
 import com.autocall.app.util.sortedByNextTrigger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,11 +22,12 @@ import kotlinx.coroutines.launch
 
 data class ScheduledCallItem(
     val scheduledCall: ScheduledCall,
-    val recentDurationsSeconds: List<Int> = emptyList(),
+    val recentCalls: List<RecentCallDuration> = emptyList(),
 )
 
 data class SystemStatus(
     val hasCallPhonePermission: Boolean = false,
+    val hasAnswerPhoneCallsPermission: Boolean = false,
     val hasReadPhoneStatePermission: Boolean = false,
     val hasReadContactsPermission: Boolean = false,
     val hasNotificationPermission: Boolean = true,
@@ -35,6 +37,7 @@ data class SystemStatus(
 ) {
     val hasAllRuntimePermissions: Boolean
         get() = hasCallPhonePermission &&
+            hasAnswerPhoneCallsPermission &&
             hasReadPhoneStatePermission &&
             hasReadContactsPermission &&
             hasNotificationPermission
@@ -62,12 +65,17 @@ class AutoCallViewModel(
                 entries
                     .sortedByDescending { log -> log.recordedAtMillis }
                     .take(CallDurationLog.MAX_RECENT)
-                    .map { log -> log.durationSeconds }
+                    .map { log ->
+                        RecentCallDuration(
+                            durationSeconds = log.durationSeconds,
+                            endedByAutoHangup = log.endedByAutoHangup,
+                        )
+                    }
             }
         calls.sortedByNextTrigger().map { call ->
             ScheduledCallItem(
                 scheduledCall = call,
-                recentDurationsSeconds = recentByCallId[call.id].orEmpty(),
+                recentCalls = recentByCallId[call.id].orEmpty(),
             )
         }
     }.stateIn(
@@ -89,6 +97,7 @@ class AutoCallViewModel(
         val context = getApplication<Application>()
         _systemStatus.value = SystemStatus(
             hasCallPhonePermission = PermissionHelper.hasCallPhonePermission(context),
+            hasAnswerPhoneCallsPermission = PermissionHelper.hasAnswerPhoneCallsPermission(context),
             hasReadPhoneStatePermission = PermissionHelper.hasReadPhoneStatePermission(context),
             hasReadContactsPermission = PermissionHelper.hasReadContactsPermission(context),
             hasNotificationPermission = PermissionHelper.hasNotificationPermission(context),
@@ -125,6 +134,10 @@ class AutoCallViewModel(
 
     fun saveCall(form: ScheduledCallForm) {
         viewModelScope.launch {
+            val successWindowSeconds = form.successWindowSeconds.coerceIn(
+                ScheduledCall.MIN_SUCCESS_WINDOW_SECONDS,
+                ScheduledCall.MAX_SUCCESS_WINDOW_SECONDS,
+            )
             val call = ScheduledCall(
                 id = form.id,
                 contactName = form.contactName?.takeIf { it.isNotBlank() },
@@ -135,7 +148,12 @@ class AutoCallViewModel(
                 isEnabled = form.isEnabled,
                 useSpeakerphone = form.useSpeakerphone,
                 expectedDurationSeconds = form.expectedDurationSeconds,
-                successWindowSeconds = form.successWindowSeconds,
+                successWindowSeconds = successWindowSeconds,
+                endCallAfterSeconds = ScheduledCall.normalizeEndCallAfterSeconds(
+                    endCallAfterSeconds = form.endCallAfterSeconds,
+                    expectedDurationSeconds = form.expectedDurationSeconds,
+                    successWindowSeconds = successWindowSeconds,
+                ),
             )
 
             if (call.phoneNumber.isBlank() || call.days().isEmpty()) return@launch
@@ -187,4 +205,5 @@ data class ScheduledCallForm(
     val useSpeakerphone: Boolean = false,
     val expectedDurationSeconds: Int? = null,
     val successWindowSeconds: Int = ScheduledCall.DEFAULT_SUCCESS_WINDOW_SECONDS,
+    val endCallAfterSeconds: Int? = null,
 )

@@ -1,5 +1,10 @@
 package com.autocall.app.util
 
+data class RecentCallDuration(
+    val durationSeconds: Int,
+    val endedByAutoHangup: Boolean = false,
+)
+
 object DurationFormatter {
 
     fun format(totalSeconds: Int): String {
@@ -10,6 +15,11 @@ object DurationFormatter {
         } else {
             "${seconds}s"
         }
+    }
+
+    fun formatEntry(entry: RecentCallDuration): String {
+        val base = format(entry.durationSeconds)
+        return if (entry.endedByAutoHangup) "$base (hung up)" else base
     }
 
     fun parseOptionalDuration(minutesText: String, secondsText: String): Int? {
@@ -33,13 +43,13 @@ object DurationFormatter {
         return minutesText to secondsText
     }
 
-    fun formatRecent(durations: List<Int>): String {
-        if (durations.isEmpty()) return "Recent calls: none"
-        val list = durations.joinToString(", ") { format(it) }
-        if (durations.size == 1) {
+    fun formatRecent(entries: List<RecentCallDuration>): String {
+        if (entries.isEmpty()) return "Recent calls: none"
+        val list = entries.joinToString(", ") { formatEntry(it) }
+        if (entries.size == 1) {
             return "Recent calls: $list"
         }
-        val average = durations.average().toInt()
+        val average = entries.map { it.durationSeconds }.average().toInt()
         return "Recent calls: $list (avg ${format(average)})"
     }
 }

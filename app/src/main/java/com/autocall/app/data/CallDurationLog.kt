@@ -23,6 +23,8 @@ data class CallDurationLog(
     val scheduledCallId: Long,
     val durationSeconds: Int,
     val recordedAtMillis: Long,
+    /** True when AutoCall forced the hangup for this attempt. */
+    val endedByAutoHangup: Boolean = false,
 ) {
     companion object {
         const val MAX_RECENT = 5

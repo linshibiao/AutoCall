@@ -91,6 +91,15 @@ fun AddEditCallDialog(
                 .toString(),
         )
     }
+    val existingEndCallAfter = remember(existingCall) {
+        DurationFormatter.split(existingCall?.endCallAfterSeconds)
+    }
+    var endCallMinutesText by remember(existingCall) {
+        mutableStateOf(existingEndCallAfter.first)
+    }
+    var endCallSecondsText by remember(existingCall) {
+        mutableStateOf(existingEndCallAfter.second)
+    }
 
     val contactPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickContact(),
@@ -233,6 +242,12 @@ fun AddEditCallDialog(
                     durationMinutesText,
                     durationSecondsText,
                 )
+                val successWindowSeconds = successWindowText.toIntOrNull()
+                    ?.coerceIn(
+                        ScheduledCall.MIN_SUCCESS_WINDOW_SECONDS,
+                        ScheduledCall.MAX_SUCCESS_WINDOW_SECONDS,
+                    )
+                    ?: ScheduledCall.DEFAULT_SUCCESS_WINDOW_SECONDS
                 if (parsedDuration != null) {
                     OutlinedTextField(
                         value = successWindowText,
@@ -253,10 +268,100 @@ fun AddEditCallDialog(
                     )
                 }
 
+                Text("End call after (optional)")
+                Text(
+                    text = "Leave empty to leave the call open. If set, AutoCall hangs up after this many connected seconds.",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = endCallMinutesText,
+                        onValueChange = { value ->
+                            if (value.all(Char::isDigit) && value.length <= 3) {
+                                endCallMinutesText = value
+                            }
+                        },
+                        label = { Text("Minutes") },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = endCallSecondsText,
+                        onValueChange = { value ->
+                            if (value.all(Char::isDigit) && value.length <= 2) {
+                                val parsed = value.toIntOrNull()
+                                if (parsed == null || parsed <= 59) {
+                                    endCallSecondsText = value
+                                }
+                            }
+                        },
+                        label = { Text("Seconds") },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                }
+                val parsedEndCallAfter = DurationFormatter.parseOptionalDuration(
+                    endCallMinutesText,
+                    endCallSecondsText,
+                )
+                val endCallAfterValid = ScheduledCall.isValidEndCallAfterSeconds(
+                    endCallAfterSeconds = parsedEndCallAfter,
+                    expectedDurationSeconds = parsedDuration,
+                    successWindowSeconds = successWindowSeconds,
+                )
+                val minimumEndCallAfter = ScheduledCall.minimumEndCallAfterSeconds(
+                    expectedDurationSeconds = parsedDuration,
+                    successWindowSeconds = successWindowSeconds,
+                )
+                if (minimumEndCallAfter != null) {
+                    Text(
+                        text = if (endCallAfterValid) {
+                            "If set, must be greater than expected duration + success window " +
+                                "(at least ${DurationFormatter.format(minimumEndCallAfter)})."
+                        } else {
+                            "End call after must be at least " +
+                                "${DurationFormatter.format(minimumEndCallAfter)} " +
+                                "(greater than expected duration + success window)."
+                        },
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = if (endCallAfterValid) {
+                            androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            androidx.compose.material3.MaterialTheme.colorScheme.error
+                        },
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(4.dp))
             }
         },
         confirmButton = {
+            val parsedDurationForSave = DurationFormatter.parseOptionalDuration(
+                durationMinutesText,
+                durationSecondsText,
+            )
+            val successWindowForSave = successWindowText.toIntOrNull()
+                ?.coerceIn(
+                    ScheduledCall.MIN_SUCCESS_WINDOW_SECONDS,
+                    ScheduledCall.MAX_SUCCESS_WINDOW_SECONDS,
+                )
+                ?: ScheduledCall.DEFAULT_SUCCESS_WINDOW_SECONDS
+            val parsedEndCallAfterForSave = DurationFormatter.parseOptionalDuration(
+                endCallMinutesText,
+                endCallSecondsText,
+            )
+            val canSave = phoneNumber.isNotBlank() &&
+                selectedDays.isNotEmpty() &&
+                ScheduledCall.isValidEndCallAfterSeconds(
+                    endCallAfterSeconds = parsedEndCallAfterForSave,
+                    expectedDurationSeconds = parsedDurationForSave,
+                    successWindowSeconds = successWindowForSave,
+                )
             Button(
                 onClick = {
                     onSave(
@@ -269,20 +374,13 @@ fun AddEditCallDialog(
                             minute = minute,
                             isEnabled = isEnabled,
                             useSpeakerphone = useSpeakerphone,
-                            expectedDurationSeconds = DurationFormatter.parseOptionalDuration(
-                                durationMinutesText,
-                                durationSecondsText,
-                            ),
-                            successWindowSeconds = successWindowText.toIntOrNull()
-                                ?.coerceIn(
-                                    ScheduledCall.MIN_SUCCESS_WINDOW_SECONDS,
-                                    ScheduledCall.MAX_SUCCESS_WINDOW_SECONDS,
-                                )
-                                ?: ScheduledCall.DEFAULT_SUCCESS_WINDOW_SECONDS,
+                            expectedDurationSeconds = parsedDurationForSave,
+                            successWindowSeconds = successWindowForSave,
+                            endCallAfterSeconds = parsedEndCallAfterForSave,
                         ),
                     )
                 },
-                enabled = phoneNumber.isNotBlank() && selectedDays.isNotEmpty(),
+                enabled = canSave,
             ) {
                 Text("Save")
             }
