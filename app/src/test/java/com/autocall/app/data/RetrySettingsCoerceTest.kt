@@ -59,6 +59,6 @@ class RetrySettingsCoerceTest {
         assertEquals(3, RetrySettings.DEFAULT_MAX_RETRIES)
         assertEquals(10, RetrySettings.DEFAULT_RETRY_DEADLINE_MINUTES)
         assertEquals(5, RetrySettings.DEFAULT_BUSY_DEFER_PROMPT_MINUTES)
-        assertEquals(5, RetrySettings.DEFAULT_RETRY_DELAY_SECONDS)
+        assertEquals(10, RetrySettings.DEFAULT_RETRY_DELAY_SECONDS)
     }
 }

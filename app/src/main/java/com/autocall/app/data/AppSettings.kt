@@ -12,7 +12,7 @@ data class RetrySettings(
         const val DEFAULT_MAX_RETRIES = 3
         const val DEFAULT_RETRY_DEADLINE_MINUTES = 10
         const val DEFAULT_BUSY_DEFER_PROMPT_MINUTES = 5
-        const val DEFAULT_RETRY_DELAY_SECONDS = 5
+        const val DEFAULT_RETRY_DELAY_SECONDS = 10
         const val MIN_RETRIES = 0
         const val MAX_RETRIES_LIMIT = 10
         const val MIN_RETRY_DEADLINE_MINUTES = 1
