@@ -12,6 +12,7 @@ data class BusyDeferState(
     val contactName: String?,
     val phoneNumber: String,
     val awaitingUserDecision: Boolean,
+    val isTestCall: Boolean = false,
 )
 
 /**
@@ -59,6 +60,7 @@ object BusyDeferStore {
             .put("contactName", state.contactName)
             .put("phoneNumber", state.phoneNumber)
             .put("awaitingUserDecision", state.awaitingUserDecision)
+            .put("isTestCall", state.isTestCall)
             .toString()
 
     private fun decode(raw: String): BusyDeferState? = runCatching {
@@ -75,6 +77,7 @@ object BusyDeferStore {
             },
             phoneNumber = json.optString("phoneNumber", ""),
             awaitingUserDecision = json.optBoolean("awaitingUserDecision", false),
+            isTestCall = json.optBoolean("isTestCall", false),
         )
     }.getOrNull()
 

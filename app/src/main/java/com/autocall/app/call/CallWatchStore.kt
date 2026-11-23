@@ -24,6 +24,8 @@ data class CallWatchSession(
     val endCallAfterSeconds: Int = 0,
     /** Set when AutoCall forced the hangup; forces failure/retry when expected duration is set. */
     val endedByAutoHangup: Boolean = false,
+    /** Manual test dial from the dashboard; skips schedule day/enabled gates on retries. */
+    val isTestCall: Boolean = false,
 )
 
 object CallWatchStore {
@@ -58,6 +60,7 @@ object CallWatchStore {
             ),
             endCallAfterSeconds = prefs.getInt(KEY_END_CALL_AFTER_SECONDS, 0).coerceAtLeast(0),
             endedByAutoHangup = prefs.getBoolean(KEY_ENDED_BY_AUTO_HANGUP, false),
+            isTestCall = prefs.getBoolean(KEY_IS_TEST_CALL, false),
         )
     }
 
@@ -77,6 +80,7 @@ object CallWatchStore {
             .putInt(KEY_SUCCESS_WINDOW_SECONDS, session.successWindowSeconds)
             .putInt(KEY_END_CALL_AFTER_SECONDS, session.endCallAfterSeconds)
             .putBoolean(KEY_ENDED_BY_AUTO_HANGUP, session.endedByAutoHangup)
+            .putBoolean(KEY_IS_TEST_CALL, session.isTestCall)
             .commit()
     }
 
@@ -102,4 +106,5 @@ object CallWatchStore {
     private const val KEY_SUCCESS_WINDOW_SECONDS = "success_window_seconds"
     private const val KEY_END_CALL_AFTER_SECONDS = "end_call_after_seconds"
     private const val KEY_ENDED_BY_AUTO_HANGUP = "ended_by_auto_hangup"
+    private const val KEY_IS_TEST_CALL = "is_test_call"
 }

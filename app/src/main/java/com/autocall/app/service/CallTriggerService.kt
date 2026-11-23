@@ -21,8 +21,10 @@ import com.autocall.app.call.BusyDeferState
 import com.autocall.app.call.BusyDeferStore
 import com.autocall.app.call.CallLauncher
 import com.autocall.app.call.CallRetryCoordinator
+import com.autocall.app.call.CallWatchStore
 import com.autocall.app.call.ScreenTimeoutHelper
 import com.autocall.app.call.SpeakerphoneHelper
+import com.autocall.app.call.TestCallFlagLogic
 import com.autocall.app.data.AppDatabase
 import com.autocall.app.data.AppSettings
 import com.autocall.app.data.ScheduledCall
@@ -59,6 +61,7 @@ class CallTriggerService : Service() {
             -1L,
         ) ?: -1L
         val forcePlace = intent?.getBooleanExtra(EXTRA_FORCE_PLACE, false) ?: false
+        val isTestCall = intent?.getBooleanExtra(EXTRA_TEST_CALL, false) ?: false
 
         if (scheduledCallId < 0 || dayOfWeek < 0) {
             stopSelf()
@@ -91,6 +94,7 @@ class CallTriggerService : Service() {
                     retryAttempt = retryAttempt,
                     deferredSinceMillis = deferredSinceMillis,
                     forcePlace = forcePlace,
+                    isTestCall = isTestCall,
                 )
             } finally {
                 stopSelf(startId)
@@ -117,15 +121,36 @@ class CallTriggerService : Service() {
         retryAttempt: Int,
         deferredSinceMillis: Long,
         forcePlace: Boolean,
+        isTestCall: Boolean,
     ) {
         val dao = AppDatabase.getInstance(this).scheduledCallDao()
         val scheduledCall = dao.getById(scheduledCallId)
-        if (scheduledCall == null || !scheduledCall.isEnabled) {
+        // Retries/busy-polls for a dashboard test dial keep isTestCall via session / defer state.
+        val treatAsTest = TestCallFlagLogic.treatAsTest(
+            intentIsTestCall = isTestCall,
+            retryAttempt = retryAttempt,
+            deferredSinceMillis = deferredSinceMillis,
+            scheduledCallId = scheduledCallId,
+            watchSession = CallWatchStore.load(this)?.let {
+                TestCallFlagLogic.WatchTestSnapshot(
+                    scheduledCallId = it.scheduledCallId,
+                    isTestCall = it.isTestCall,
+                )
+            },
+            busyDeferIsTestCall = BusyDeferStore.load(this, scheduledCallId)?.isTestCall,
+        )
+
+        if (scheduledCall == null) {
             clearBusyDefer(scheduledCallId)
             CallRetryCoordinator.abort(this)
             return
         }
-        if (!scheduledCall.days().contains(dayOfWeek)) {
+        if (!treatAsTest && !scheduledCall.isEnabled) {
+            clearBusyDefer(scheduledCallId)
+            CallRetryCoordinator.abort(this)
+            return
+        }
+        if (!treatAsTest && !scheduledCall.days().contains(dayOfWeek)) {
             if (retryAttempt > 0) {
                 CallRetryCoordinator.abort(this)
             }
@@ -165,6 +190,7 @@ class CallTriggerService : Service() {
                 deferredSinceMillis = deferredSinceMillis,
                 // Place was tapped but another watch session still owns the slot — keep polling.
                 resumePolling = forcePlace,
+                isTestCall = treatAsTest,
             )
             return
         }
@@ -172,13 +198,20 @@ class CallTriggerService : Service() {
         clearBusyDefer(scheduledCallId)
 
         if (canTrackDuration && retryAttempt == 0) {
-            if (!CallRetryCoordinator.beginSession(this, scheduledCall, dayOfWeek)) {
+            if (!CallRetryCoordinator.beginSession(
+                    this,
+                    scheduledCall,
+                    dayOfWeek,
+                    isTestCall = treatAsTest,
+                )
+            ) {
                 handleBusyDefer(
                     scheduledCall = scheduledCall,
                     dayOfWeek = dayOfWeek,
                     retryAttempt = retryAttempt,
                     deferredSinceMillis = deferredSinceMillis,
                     resumePolling = forcePlace,
+                    isTestCall = treatAsTest,
                 )
                 return
             }
@@ -191,7 +224,8 @@ class CallTriggerService : Service() {
             CallLauncher.placeCall(
                 this,
                 scheduledCall.phoneNumber,
-                scheduledCall.useSpeakerphone,
+                useSpeakerphone = scheduledCall.useSpeakerphone,
+                forceSimDial = AppSettings(this).isForceSimDial(),
             )
         } catch (error: Exception) {
             Log.e(TAG, "placeCall threw for call ${scheduledCall.id}", error)
@@ -214,7 +248,7 @@ class CallTriggerService : Service() {
             ScreenTimeoutHelper.releaseWhenCallCompletes(this)
         }
 
-        if (retryAttempt == 0) {
+        if (retryAttempt == 0 && !treatAsTest) {
             AlarmScheduler(this).scheduleCallDay(scheduledCall, dayOfWeek)
         }
 
@@ -229,6 +263,7 @@ class CallTriggerService : Service() {
         retryAttempt: Int,
         deferredSinceMillis: Long,
         resumePolling: Boolean = false,
+        isTestCall: Boolean = false,
     ) {
         val now = System.currentTimeMillis()
         val existing = BusyDeferStore.load(this, scheduledCall.id)
@@ -255,6 +290,7 @@ class CallTriggerService : Service() {
             contactName = scheduledCall.contactName,
             phoneNumber = scheduledCall.phoneNumber,
             awaitingUserDecision = plan.awaitingUserDecision,
+            isTestCall = isTestCall,
         )
 
         when (plan.phase) {
@@ -271,7 +307,7 @@ class CallTriggerService : Service() {
                 )
                 BusyDeferStore.save(this, state)
                 BusyDeferNotifier.showDecisionPrompt(this, state, promptMinutes)
-                if (retryAttempt == 0) {
+                if (retryAttempt == 0 && !isTestCall) {
                     AlarmScheduler(this).scheduleCallDay(scheduledCall, dayOfWeek)
                 }
                 return
@@ -299,8 +335,9 @@ class CallTriggerService : Service() {
             retryAttempt = retryAttempt,
             delayMs = CallRetryCoordinator.BUSY_DEFER_DELAY_MS,
             deferredSinceMillis = plan.deferredSinceMillis,
+            isTestCall = isTestCall,
         )
-        if (retryAttempt == 0) {
+        if (retryAttempt == 0 && !isTestCall) {
             AlarmScheduler(this).scheduleCallDay(scheduledCall, dayOfWeek)
         }
         if (!deferred) {
@@ -361,6 +398,7 @@ class CallTriggerService : Service() {
         private const val TAG = "CallTriggerService"
         const val CHANNEL_ID = "autocall_trigger"
         const val EXTRA_FORCE_PLACE = "extra_force_place"
+        const val EXTRA_TEST_CALL = "extra_test_call"
         private const val NOTIFICATION_ID = 1001
         private const val SPEAKERPHONE_RETRY_COUNT = 5
         private const val SPEAKERPHONE_RETRY_DELAY_MS = 1_500L
@@ -372,6 +410,7 @@ class CallTriggerService : Service() {
             retryAttempt: Int = 0,
             deferredSinceMillis: Long = -1L,
             forcePlace: Boolean = false,
+            isTestCall: Boolean = false,
         ) {
             val intent = Intent(context, CallTriggerService::class.java).apply {
                 putExtra(CallAlarmReceiver.EXTRA_SCHEDULED_CALL_ID, scheduledCallId)
@@ -379,6 +418,7 @@ class CallTriggerService : Service() {
                 putExtra(CallAlarmReceiver.EXTRA_RETRY_ATTEMPT, retryAttempt)
                 putExtra(CallAlarmReceiver.EXTRA_DEFERRED_SINCE_MILLIS, deferredSinceMillis)
                 putExtra(EXTRA_FORCE_PLACE, forcePlace)
+                putExtra(EXTRA_TEST_CALL, isTestCall)
             }
             ContextCompat.startForegroundService(context, intent)
         }

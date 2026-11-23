@@ -14,6 +14,7 @@ fun AutoCallApp(viewModel: AutoCallViewModel) {
     val systemStatus by viewModel.systemStatus.collectAsState()
     val editingCall by viewModel.editingCall.collectAsState()
     val retrySettings by viewModel.retrySettings.collectAsState()
+    val forceSimDial by viewModel.forceSimDial.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
 
     LifecycleResumeEffect(Unit) {
@@ -28,6 +29,7 @@ fun AutoCallApp(viewModel: AutoCallViewModel) {
         onAddClick = viewModel::startAddingCall,
         onEditClick = viewModel::startEditingCall,
         onDeleteClick = viewModel::deleteCall,
+        onTestCallClick = viewModel::testCall,
         onToggleEnabled = viewModel::toggleEnabled,
         onSettingsClick = { showSettings = true },
     )
@@ -35,13 +37,15 @@ fun AutoCallApp(viewModel: AutoCallViewModel) {
     if (showSettings) {
         SettingsDialog(
             retrySettings = retrySettings,
+            forceSimDial = forceSimDial,
             onDismiss = { showSettings = false },
-            onSave = { retries, deadlineMinutes, busyDeferPromptMinutes, retryDelaySeconds ->
-                viewModel.updateRetrySettings(
+            onSave = { retries, deadlineMinutes, busyDeferPromptMinutes, retryDelaySeconds, forceSimDialEnabled ->
+                viewModel.updateCallSettings(
                     retries,
                     deadlineMinutes,
                     busyDeferPromptMinutes,
                     retryDelaySeconds,
+                    forceSimDialEnabled,
                 )
                 showSettings = false
             },

@@ -6,7 +6,9 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
+import android.util.Log
 import androidx.core.content.ContextCompat
 
 object CallLauncher {
@@ -18,6 +20,7 @@ object CallLauncher {
         context: Context,
         phoneNumber: String,
         useSpeakerphone: Boolean = false,
+        forceSimDial: Boolean = false,
     ): Boolean {
         if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CALL_PHONE)
             != PackageManager.PERMISSION_GRANTED
@@ -26,9 +29,26 @@ object CallLauncher {
         }
 
         val uri = buildTelUri(phoneNumber)
+        val simHandle = if (forceSimDial) {
+            SimDialAccountResolver.resolveSimHandle(context).also { handle ->
+                if (handle == null) {
+                    // Fail closed: placing without a pin would allow GV/default routing.
+                    Log.e(TAG, "forceSimDial set but no SIM account found; aborting placeCall")
+                }
+            }
+        } else {
+            null
+        }
+        if (forceSimDial && simHandle == null) {
+            return false
+        }
+
         val extras = Bundle().apply {
             if (useSpeakerphone) {
                 putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, true)
+            }
+            if (simHandle != null) {
+                putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, simHandle)
             }
         }
 
@@ -43,8 +63,16 @@ object CallLauncher {
         val callIntent = Intent(Intent.ACTION_CALL, uri).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, useSpeakerphone)
+            putPhoneAccountHandleExtra(this, simHandle)
         }
         context.startActivity(callIntent)
         return true
     }
+
+    private fun putPhoneAccountHandleExtra(intent: Intent, handle: PhoneAccountHandle?) {
+        if (handle == null) return
+        intent.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
+    }
+
+    private const val TAG = "CallLauncher"
 }

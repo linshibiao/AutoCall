@@ -3,6 +3,8 @@ package com.autocall.app.data
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,5 +53,16 @@ class AppSettingsTest {
         assertEquals(15, settings.getRetrySettings().retryDeadlineMinutes)
         assertEquals(1, saved.retryDelaySeconds)
         assertEquals(1, settings.getRetrySettings().retryDelaySeconds)
+    }
+
+    @Test
+    fun forceSimDial_defaultsFalse_andPersists() {
+        val settings = AppSettings(context)
+        assertFalse(settings.isForceSimDial())
+        settings.setForceSimDial(true)
+        assertTrue(settings.isForceSimDial())
+        assertTrue(AppSettings(context).isForceSimDial())
+        settings.setForceSimDial(false)
+        assertFalse(settings.isForceSimDial())
     }
 }

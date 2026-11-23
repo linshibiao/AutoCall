@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
@@ -23,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -45,6 +47,7 @@ fun DashboardScreen(
     onAddClick: () -> Unit,
     onEditClick: (ScheduledCall) -> Unit,
     onDeleteClick: (ScheduledCall) -> Unit,
+    onTestCallClick: (ScheduledCall) -> Unit,
     onToggleEnabled: (ScheduledCall, Boolean) -> Unit,
     onSettingsClick: () -> Unit,
 ) {
@@ -96,6 +99,7 @@ fun DashboardScreen(
                         recentCalls = item.recentCalls,
                         onEditClick = { onEditClick(item.scheduledCall) },
                         onDeleteClick = { onDeleteClick(item.scheduledCall) },
+                        onTestCallClick = { onTestCallClick(item.scheduledCall) },
                         onToggleEnabled = { enabled -> onToggleEnabled(item.scheduledCall, enabled) },
                     )
                 }
@@ -110,6 +114,7 @@ private fun ScheduledCallCard(
     recentCalls: List<RecentCallDuration>,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    onTestCallClick: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -192,8 +197,17 @@ private fun ScheduledCallCard(
 
             Row(
                 horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
+                TextButton(onClick = onTestCallClick) {
+                    Icon(
+                        Icons.Default.Call,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 4.dp),
+                    )
+                    Text("Test call")
+                }
                 IconButton(onClick = onEditClick) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit")
                 }

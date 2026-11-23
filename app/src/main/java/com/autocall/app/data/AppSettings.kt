@@ -92,11 +92,19 @@ class AppSettings(context: Context) {
         return next
     }
 
+    /** When true, AutoCall places outbound calls on a SIM/telephony account (bypass Google Voice). */
+    fun isForceSimDial(): Boolean = prefs.getBoolean(KEY_FORCE_SIM_DIAL, false)
+
+    fun setForceSimDial(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_FORCE_SIM_DIAL, enabled).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "autocall_settings"
         private const val KEY_MAX_RETRIES = "max_retries"
         private const val KEY_RETRY_DEADLINE_MINUTES = "retry_deadline_minutes"
         private const val KEY_BUSY_DEFER_PROMPT_MINUTES = "busy_defer_prompt_minutes"
         private const val KEY_RETRY_DELAY_SECONDS = "retry_delay_seconds"
+        private const val KEY_FORCE_SIM_DIAL = "force_sim_dial"
     }
 }

@@ -1,6 +1,7 @@
 package com.autocall.app.ui
 
 import android.app.Application
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autocall.app.data.AppSettings
@@ -8,6 +9,7 @@ import com.autocall.app.data.CallDurationLog
 import com.autocall.app.data.RetrySettings
 import com.autocall.app.data.ScheduledCall
 import com.autocall.app.data.ScheduledCallRepository
+import com.autocall.app.service.CallTriggerService
 import com.autocall.app.util.DaysOfWeek
 import com.autocall.app.util.PermissionHelper
 import com.autocall.app.util.RecentCallDuration
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 data class ScheduledCallItem(
     val scheduledCall: ScheduledCall,
@@ -92,6 +95,9 @@ class AutoCallViewModel(
 
     private val _retrySettings = MutableStateFlow(appSettings.getRetrySettings())
     val retrySettings: StateFlow<RetrySettings> = _retrySettings.asStateFlow()
+
+    private val _forceSimDial = MutableStateFlow(appSettings.isForceSimDial())
+    val forceSimDial: StateFlow<Boolean> = _forceSimDial.asStateFlow()
 
     fun refreshSystemStatus() {
         val context = getApplication<Application>()
@@ -179,11 +185,34 @@ class AutoCallViewModel(
         }
     }
 
-    fun updateRetrySettings(
+    fun testCall(scheduledCall: ScheduledCall) {
+        if (scheduledCall.id == 0L) return
+        val context = getApplication<Application>()
+        if (!PermissionHelper.hasCallPhonePermission(context)) {
+            refreshSystemStatus()
+            Toast.makeText(
+                context,
+                "Grant Phone permission to place a test call",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        val dayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+        CallTriggerService.start(
+            context = context,
+            scheduledCallId = scheduledCall.id,
+            dayOfWeek = dayOfWeek,
+            retryAttempt = 0,
+            isTestCall = true,
+        )
+    }
+
+    fun updateCallSettings(
         maxRetries: Int,
         retryDeadlineMinutes: Int,
         busyDeferPromptMinutes: Int,
         retryDelaySeconds: Int,
+        forceSimDial: Boolean,
     ) {
         _retrySettings.value = appSettings.setRetrySettings(
             maxRetries = maxRetries,
@@ -191,6 +220,8 @@ class AutoCallViewModel(
             busyDeferPromptMinutes = busyDeferPromptMinutes,
             retryDelaySeconds = retryDelaySeconds,
         )
+        appSettings.setForceSimDial(forceSimDial)
+        _forceSimDial.value = forceSimDial
     }
 }
 

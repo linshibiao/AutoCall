@@ -97,9 +97,39 @@ class CallWatchStoreTest {
         assertFalse(CallWatchStore.load(context)!!.endedByAutoHangup)
     }
 
+    @Test
+    fun save_and_load_roundTripsIsTestCall() {
+        val session = sampleSession(isTestCall = true)
+        CallWatchStore.save(context, session)
+        assertTrue(CallWatchStore.load(context)!!.isTestCall)
+    }
+
+    @Test
+    fun load_defaultsIsTestCallFalse_whenLegacyPrefsOmitIt() {
+        context.getSharedPreferences("autocall_call_watch", Context.MODE_PRIVATE)
+            .edit()
+            .putLong("scheduled_call_id", 7L)
+            .putInt("day_of_week", 2)
+            .putInt("retry_attempt", 1)
+            .putInt("expected_duration_seconds", 60)
+            .putString("phase", CallWatchPhase.IN_CALL.name)
+            .putLong("original_schedule", 1_000L)
+            .putLong("placed_at", 1_100L)
+            .putLong("offhook_at", 1_200L)
+            .putString("contact_name", "Ada")
+            .putString("phone_number", "555-0100")
+            .putBoolean("use_speakerphone", true)
+            .putInt("success_window_seconds", 10)
+            .commit()
+
+        val loaded = CallWatchStore.load(context)!!
+        assertFalse(loaded.isTestCall)
+    }
+
     private fun sampleSession(
         endCallAfterSeconds: Int = 0,
         endedByAutoHangup: Boolean = false,
+        isTestCall: Boolean = false,
     ) = CallWatchSession(
         scheduledCallId = 42L,
         dayOfWeek = 3,
@@ -115,5 +145,6 @@ class CallWatchStoreTest {
         successWindowSeconds = 10,
         endCallAfterSeconds = endCallAfterSeconds,
         endedByAutoHangup = endedByAutoHangup,
+        isTestCall = isTestCall,
     )
 }

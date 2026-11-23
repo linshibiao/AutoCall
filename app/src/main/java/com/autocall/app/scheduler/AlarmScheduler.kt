@@ -95,6 +95,7 @@ class AlarmScheduler(private val context: Context) {
         retryAttempt: Int,
         delayMs: Long,
         deferredSinceMillis: Long = -1L,
+        isTestCall: Boolean = false,
     ): Boolean {
         if (!PermissionHelper.canScheduleExactAlarms(context)) {
             Log.w(TAG, "Exact alarm permission missing; cannot retry call $scheduledCallId")
@@ -107,6 +108,7 @@ class AlarmScheduler(private val context: Context) {
             dayOfWeek = dayOfWeek,
             retryAttempt = retryAttempt,
             deferredSinceMillis = deferredSinceMillis,
+            isTestCall = isTestCall,
         )
 
         return try {
@@ -167,6 +169,7 @@ class AlarmScheduler(private val context: Context) {
         dayOfWeek: Int,
         retryAttempt: Int,
         deferredSinceMillis: Long = -1L,
+        isTestCall: Boolean = false,
     ): PendingIntent {
         val intent = Intent(context, CallAlarmReceiver::class.java).apply {
             action = CallAlarmReceiver.ACTION_TRIGGER_CALL
@@ -174,6 +177,7 @@ class AlarmScheduler(private val context: Context) {
             putExtra(CallAlarmReceiver.EXTRA_DAY_OF_WEEK, dayOfWeek)
             putExtra(CallAlarmReceiver.EXTRA_RETRY_ATTEMPT, retryAttempt)
             putExtra(CallAlarmReceiver.EXTRA_DEFERRED_SINCE_MILLIS, deferredSinceMillis)
+            putExtra(CallAlarmReceiver.EXTRA_TEST_CALL, isTestCall)
         }
 
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

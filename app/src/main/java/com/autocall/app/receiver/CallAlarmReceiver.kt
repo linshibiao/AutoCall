@@ -19,12 +19,14 @@ class CallAlarmReceiver : BroadcastReceiver() {
 
         val retryAttempt = intent.getIntExtra(EXTRA_RETRY_ATTEMPT, 0)
         val deferredSinceMillis = intent.getLongExtra(EXTRA_DEFERRED_SINCE_MILLIS, -1L)
+        val isTestCall = intent.getBooleanExtra(EXTRA_TEST_CALL, false)
         CallTriggerService.start(
             context = context,
             scheduledCallId = scheduledCallId,
             dayOfWeek = dayOfWeek,
             retryAttempt = retryAttempt,
             deferredSinceMillis = deferredSinceMillis,
+            isTestCall = isTestCall,
         )
     }
 
@@ -34,5 +36,6 @@ class CallAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_DAY_OF_WEEK = "extra_day_of_week"
         const val EXTRA_RETRY_ATTEMPT = "extra_retry_attempt"
         const val EXTRA_DEFERRED_SINCE_MILLIS = "extra_deferred_since_millis"
+        const val EXTRA_TEST_CALL = "extra_test_call"
     }
 }

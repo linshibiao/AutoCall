@@ -80,7 +80,12 @@ object CallRetryCoordinator {
      * Starts a new watch session. Returns false if a *different* call's session is already
      * active. Same-call sessions are reclaimed (stale/orphan after process death).
      */
-    fun beginSession(context: Context, scheduledCall: ScheduledCall, dayOfWeek: Int): Boolean {
+    fun beginSession(
+        context: Context,
+        scheduledCall: ScheduledCall,
+        dayOfWeek: Int,
+        isTestCall: Boolean = false,
+    ): Boolean {
         val expected = scheduledCall.expectedDurationSeconds?.takeIf { it > 0 } ?: 0
 
         val appContext = context.applicationContext
@@ -101,6 +106,7 @@ object CallRetryCoordinator {
                 )
             }
             AlarmScheduler(appContext).cancelRetry(scheduledCall.id)
+            val now = System.currentTimeMillis()
             CallWatchStore.save(
                 appContext,
                 CallWatchSession(
@@ -109,12 +115,17 @@ object CallRetryCoordinator {
                     retryAttempt = 0,
                     expectedDurationSeconds = expected,
                     phase = CallWatchPhase.RETRY_PENDING,
-                    originalScheduleMillis = originalScheduleMillis(
-                        dayOfWeek = dayOfWeek,
-                        hour = scheduledCall.hour,
-                        minute = scheduledCall.minute,
-                    ),
-                    placedAtMillis = System.currentTimeMillis(),
+                    // Test dials start the retry deadline window from now, not the schedule clock.
+                    originalScheduleMillis = if (isTestCall) {
+                        now
+                    } else {
+                        originalScheduleMillis(
+                            dayOfWeek = dayOfWeek,
+                            hour = scheduledCall.hour,
+                            minute = scheduledCall.minute,
+                        )
+                    },
+                    placedAtMillis = now,
                     offHookAtMillis = null,
                     contactName = scheduledCall.contactName,
                     phoneNumber = scheduledCall.phoneNumber,
@@ -128,6 +139,7 @@ object CallRetryCoordinator {
                         expectedDurationSeconds = scheduledCall.expectedDurationSeconds,
                         successWindowSeconds = scheduledCall.successWindowSeconds,
                     ) ?: 0,
+                    isTestCall = isTestCall,
                 ),
             )
             ensureMonitorLocked(appContext)
@@ -364,6 +376,7 @@ object CallRetryCoordinator {
                     dayOfWeek = next.dayOfWeek,
                     retryAttempt = next.retryAttempt,
                     delayMs = retryDelayMs,
+                    isTestCall = next.isTestCall,
                 )
                 if (!scheduled) {
                     giveUpLocked(appContext, session, "failed to schedule retry")

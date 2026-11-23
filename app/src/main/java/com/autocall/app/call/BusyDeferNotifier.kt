@@ -149,6 +149,7 @@ object BusyDeferNotifier {
             putExtra(BusyDeferActionReceiver.EXTRA_SCHEDULED_CALL_ID, state.scheduledCallId)
             putExtra(BusyDeferActionReceiver.EXTRA_DAY_OF_WEEK, state.dayOfWeek)
             putExtra(BusyDeferActionReceiver.EXTRA_RETRY_ATTEMPT, state.retryAttempt)
+            putExtra(BusyDeferActionReceiver.EXTRA_TEST_CALL, state.isTestCall)
         }
         return PendingIntent.getBroadcast(
             context,

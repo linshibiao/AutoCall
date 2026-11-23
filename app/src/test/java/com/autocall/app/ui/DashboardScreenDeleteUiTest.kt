@@ -71,6 +71,26 @@ class DashboardScreenDeleteUiTest {
         )
     }
 
+    @Test
+    fun dashboard_hasTestCallButton() {
+        assertTrue(
+            "Test call TextButton must remain on each card",
+            dashboardSource.contains("""Text("Test call")"""),
+        )
+        assertTrue(
+            "Test call must invoke onTestCallClick",
+            dashboardSource.contains("onClick = onTestCallClick"),
+        )
+    }
+
+    @Test
+    fun autoCallApp_wiresTestCallToViewModel() {
+        assertTrue(
+            "Dashboard onTestCallClick must call viewModel.testCall",
+            appSource.contains("onTestCallClick = viewModel::testCall"),
+        )
+    }
+
     private fun resolveSource(relativeFromRepoRoot: String): File {
         val candidates = listOf(
             File(relativeFromRepoRoot),
