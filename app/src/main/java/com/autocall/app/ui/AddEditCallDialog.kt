@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.autocall.app.data.ScheduledCall
+import com.autocall.app.util.ContactPhoneLogic
 import com.autocall.app.util.ContactPickerHelper
 import com.autocall.app.util.DayOfWeekFormatter
 import com.autocall.app.util.DaysOfWeek
@@ -100,14 +101,58 @@ fun AddEditCallDialog(
     var endCallSecondsText by remember(existingCall) {
         mutableStateOf(existingEndCallAfter.second)
     }
+    var pendingContactPhones by remember {
+        mutableStateOf<ContactPhoneLogic.ContactPhones?>(null)
+    }
 
     val contactPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickContact(),
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        val picked = ContactPickerHelper.resolveContact(context, uri) ?: return@rememberLauncherForActivityResult
+        val picked = ContactPickerHelper.resolveContact(context, uri)
+            ?: return@rememberLauncherForActivityResult
         contactName = picked.name.orEmpty()
-        phoneNumber = picked.phoneNumber
+        if (ContactPhoneLogic.needsChooser(picked.phones)) {
+            pendingContactPhones = picked
+        } else {
+            phoneNumber = picked.phones.first().number
+            pendingContactPhones = null
+        }
+    }
+
+    pendingContactPhones?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingContactPhones = null },
+            title = {
+                Text(
+                    pending.name?.takeIf { it.isNotBlank() }?.let { "Choose number for $it" }
+                        ?: "Choose phone number",
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    pending.phones.forEach { option ->
+                        TextButton(
+                            onClick = {
+                                phoneNumber = option.number
+                                pendingContactPhones = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = ContactPhoneLogic.formatOptionLine(option),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { pendingContactPhones = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     AlertDialog(

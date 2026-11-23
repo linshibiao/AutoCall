@@ -6,12 +6,7 @@ import android.provider.ContactsContract
 
 object ContactPickerHelper {
 
-    data class PickedContact(
-        val name: String?,
-        val phoneNumber: String,
-    )
-
-    fun resolveContact(context: Context, contactUri: Uri): PickedContact? {
+    fun resolveContact(context: Context, contactUri: Uri): ContactPhoneLogic.ContactPhones? {
         val contentResolver = context.contentResolver
 
         val name = contentResolver.query(
@@ -38,16 +33,39 @@ object ContactPickerHelper {
             if (cursor.moveToFirst()) cursor.getString(0) else null
         } ?: return null
 
-        val phoneNumber = contentResolver.query(
+        val phones = contentResolver.query(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-            arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.TYPE,
+                ContactsContract.CommonDataKinds.Phone.LABEL,
+            ),
             "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
             arrayOf(contactId),
-            "${ContactsContract.CommonDataKinds.Phone.IS_PRIMARY} DESC",
+            "${ContactsContract.CommonDataKinds.Phone.IS_PRIMARY} DESC, " +
+                "${ContactsContract.CommonDataKinds.Phone._ID} ASC",
         )?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
-        } ?: return null
+            val numberIdx = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            val typeIdx = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.TYPE)
+            val labelIdx = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.LABEL)
+            buildList {
+                while (cursor.moveToNext()) {
+                    val number = cursor.getString(numberIdx)?.trim().orEmpty()
+                    if (number.isEmpty()) continue
+                    val type = cursor.getInt(typeIdx)
+                    val customLabel = cursor.getString(labelIdx)
+                    val label = ContactsContract.CommonDataKinds.Phone.getTypeLabel(
+                        context.resources,
+                        type,
+                        customLabel,
+                    ).toString()
+                    add(ContactPhoneLogic.PhoneOption(number = number, label = label))
+                }
+            }
+        }.orEmpty()
 
-        return PickedContact(name = name, phoneNumber = phoneNumber.trim())
+        val deduped = ContactPhoneLogic.dedupePhones(phones)
+        if (deduped.isEmpty()) return null
+        return ContactPhoneLogic.ContactPhones(name = name, phones = deduped)
     }
 }
