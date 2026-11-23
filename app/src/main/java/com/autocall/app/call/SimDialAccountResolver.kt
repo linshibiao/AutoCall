@@ -50,10 +50,14 @@ object SimDialAccountResolver {
 
         // On some Android builds callCapablePhoneAccounts is empty/filtered for non-dialer
         // apps even when a SIM account is the default tel outgoing handle. Prefer that.
-        val defaultCandidate = defaultOutgoing?.let { toCandidate(telecom, it) }
+        // If getPhoneAccount is also filtered, still accept a telephony-looking component.
+        val defaultCandidate = defaultOutgoing?.let { handle ->
+            toCandidate(telecom, handle) ?: minimalCandidate(handle)
+        }
         if (
             defaultOutgoing != null &&
             defaultCandidate != null &&
+            defaultCandidate.isEnabled &&
             SimDialAccountLogic.looksLikeTelephony(defaultCandidate)
         ) {
             logSelected(defaultCandidate)
@@ -84,6 +88,18 @@ object SimDialAccountResolver {
             isEnabled = account.isEnabled,
         )
     }
+
+    private fun minimalCandidate(
+        handle: PhoneAccountHandle,
+    ): SimDialAccountLogic.AccountCandidate =
+        SimDialAccountLogic.AccountCandidate(
+            id = handleId(handle),
+            packageName = handle.componentName.packageName,
+            className = handle.componentName.className,
+            label = "",
+            isSimSubscription = false,
+            isEnabled = true,
+        )
 
     private fun logSelected(selected: SimDialAccountLogic.AccountCandidate) {
         Log.i(

@@ -139,8 +139,8 @@ class SimDialAccountLogicTest {
     }
 
     @Test
-    fun selectSimAccount_returnsNull_whenNoSimMatched_callerMustFailClosed() {
-        // CallLauncher must abort placeCall when forceSimDial is on and resolve returns null.
+    fun selectSimAccount_returnsNull_whenNoSimMatched_callerMayFailOpen() {
+        // CallLauncher fail-opens (places without pin) when forceSimDial is on and resolve is null.
         assertNull(
             SimDialAccountLogic.selectSimAccount(
                 listOf(

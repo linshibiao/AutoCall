@@ -78,4 +78,23 @@ class SystemStatusTest {
         assertTrue(status.hasAllRuntimePermissions)
         assertTrue(status.needsAttention)
     }
+
+    @Test
+    fun needsCallRedirectionRole_neverRequired_whenGatewayBypassUsed() {
+        val status = SystemStatus(
+            hasCallPhonePermission = true,
+            hasAnswerPhoneCallsPermission = true,
+            hasReadPhoneStatePermission = true,
+            hasReadContactsPermission = true,
+            hasNotificationPermission = true,
+            canScheduleExactAlarms = true,
+            isIgnoringBatteryOptimizations = true,
+            canWriteSettings = true,
+            forceSimDialEnabled = true,
+            holdsCallRedirectionRole = false,
+            callRedirectionRoleAvailable = true,
+        )
+        assertFalse(status.needsCallRedirectionRole)
+        assertFalse(status.needsAttention)
+    }
 }

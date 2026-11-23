@@ -87,7 +87,7 @@ fun SettingsDialog(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Dial via SIM (bypass Google Voice)")
                         Text(
-                            text = "Pins AutoCall outbound calls to the cellular SIM account so they prefer the SIM over Voice. Call redirection may still apply on some devices—turn off GV call redirection if dials are still proxied. Use for GV bridge strings with pauses and #. Other Phone-app calls are unchanged.",
+                            text = "AutoCall-only: pins dials to the cellular SIM and tags them so Android skips Google Voice call redirection for those dials. Your normal Phone-app calls can still use Google Voice. Needed for bridge numbers with pauses and #.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

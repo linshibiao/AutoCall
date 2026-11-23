@@ -1,5 +1,6 @@
 package com.autocall.app.call
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -19,6 +20,21 @@ class TestCallAndSimDialWireInTest {
 
     private val launcherSource: String by lazy {
         resolveSource("app/src/main/java/com/autocall/app/call/CallLauncher.kt")
+            .readText()
+    }
+
+    private val resolverSource: String by lazy {
+        resolveSource("app/src/main/java/com/autocall/app/call/SimDialAccountResolver.kt")
+            .readText()
+    }
+
+    private val appSettingsSource: String by lazy {
+        resolveSource("app/src/main/java/com/autocall/app/data/AppSettings.kt")
+            .readText()
+    }
+
+    private val migrationsSource: String by lazy {
+        resolveSource("app/src/main/java/com/autocall/app/data/Migrations.kt")
             .readText()
     }
 
@@ -89,24 +105,150 @@ class TestCallAndSimDialWireInTest {
             launcherSource.contains("forceSimDial: Boolean = false"),
         )
         assertTrue(
-            launcherSource.contains("SimDialAccountResolver.resolveSimHandle(context)"),
+            launcherSource.contains("SimDialAccountResolver.resolveSimHandle(appContext)"),
         )
         assertTrue(
             "SIM handle must only be resolved when forceSimDial is true",
             launcherSource.contains("val simHandle = if (forceSimDial)"),
         )
         assertTrue(
-            "null SIM resolve must fail closed (abort placeCall)",
+            "null SIM resolve must still place without aborting (fail-open)",
             launcherSource.contains(
-                "forceSimDial set but no SIM account found; aborting placeCall",
+                "forceSimDial set but no SIM account resolved; placing without account pin",
             ),
         )
+        assertFalse(
+            "fail-open: must not abort placeCall when SIM resolve is null",
+            launcherSource.contains("aborting placeCall") ||
+                launcherSource.contains("no SIM account found; aborting"),
+        )
         assertTrue(
-            "forceSimDial without SIM handle must return false",
-            launcherSource.contains("if (forceSimDial && simHandle == null)"),
+            "SIM bypass must use gateway extras to skip user CallRedirectionService",
+            launcherSource.contains("skipUserCallRedirection = true") &&
+                launcherSource.contains("LEGACY_GATEWAY_URI") &&
+                launcherSource.contains("com.android.phone.extra.GATEWAY_URI") &&
+                launcherSource.contains("GatewayUriLogic.legacyGatewayUriString(uri)"),
+        )
+        assertTrue(
+            "forceSimDial path must prefer telecom.placeCall before ACTION_CALL",
+            launcherSource.contains("placeCallViaTelecom(") &&
+                launcherSource.contains("telecomManager.placeCall(uri, extras)"),
+        )
+        val forceSimBlock = launcherSource.substringAfter(
+            "// Prefer TelecomManager.placeCall",
+            missingDelimiterValue = "",
+        )
+        assertTrue("forceSimDial prefer-telecom comment/block must exist", forceSimBlock.isNotEmpty())
+        val viaTelecomIdx = forceSimBlock.indexOf("placeCallViaTelecom(")
+        val viaDialerIdx = forceSimBlock.indexOf("placeCallViaActionCall(")
+        assertTrue("placeCallViaTelecom must appear in forceSimDial path", viaTelecomIdx >= 0)
+        assertTrue("placeCallViaActionCall must appear as fallback", viaDialerIdx >= 0)
+        assertTrue(
+            "telecom.placeCall path must be attempted before ACTION_CALL fallback",
+            viaTelecomIdx < viaDialerIdx,
+        )
+        assertTrue(
+            "ACTION_CALL fallback must target default dialer to avoid Voice chooser",
+            launcherSource.contains("defaultDialerPackage") &&
+                launcherSource.contains("setPackage(dialerPackage)"),
         )
         assertTrue(
             launcherSource.contains("TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE"),
+        )
+    }
+
+    @Test
+    fun callRetryCoordinator_isLineBusy_consultsTelecomIsInCall() {
+        assertTrue(
+            "isLineBusy must be defined",
+            retrySource.contains("fun isLineBusy(context: Context)"),
+        )
+        assertTrue(
+            "isLineBusy must consult Telecom after TelephonyManager idle",
+            retrySource.contains("return isTelecomInCall(appContext)"),
+        )
+        assertTrue(
+            "isTelecomInCall must call TelecomManager.isInCall",
+            retrySource.contains("private fun isTelecomInCall(context: Context)") &&
+                retrySource.contains("telecom.isInCall"),
+        )
+        val isLineBusyIdx = retrySource.indexOf("fun isLineBusy(context: Context)")
+        val telecomInCallIdx = retrySource.indexOf("isTelecomInCall(appContext)", isLineBusyIdx)
+        assertTrue("isLineBusy must call isTelecomInCall", telecomInCallIdx > isLineBusyIdx)
+        assertTrue(
+            "shouldDeferDial must pass isLineBusy into BusyDeferLogic",
+            retrySource.contains("lineBusy = isLineBusy(appContext)"),
+        )
+    }
+
+    @Test
+    fun simDialAccountResolver_fallsBackToDefaultOutgoingTelAccount() {
+        assertTrue(
+            "must query default tel outgoing account",
+            resolverSource.contains(
+                "telecom.getDefaultOutgoingPhoneAccount(PhoneAccount.SCHEME_TEL)",
+            ),
+        )
+        assertTrue(
+            "default-outgoing failures must be logged",
+            resolverSource.contains("\"getDefaultOutgoingPhoneAccount failed\""),
+        )
+        assertTrue(
+            "callCapablePhoneAccounts failures must be logged",
+            resolverSource.contains("\"callCapablePhoneAccounts failed\""),
+        )
+        assertTrue(
+            "empty/filtered callCapable list must fall back to default outgoing",
+            resolverSource.contains("callCapablePhoneAccounts is empty/filtered") ||
+                (
+                    resolverSource.contains("defaultCandidate") &&
+                        resolverSource.contains(
+                            "SimDialAccountLogic.looksLikeTelephony(defaultCandidate)",
+                        )
+                    ),
+        )
+        assertTrue(
+            "fallback default must pass looksLikeTelephony before return",
+            resolverSource.contains(
+                "SimDialAccountLogic.looksLikeTelephony(defaultCandidate)",
+            ),
+        )
+        assertTrue(
+            "fallback must accept handle when getPhoneAccount is filtered",
+            resolverSource.contains("minimalCandidate(handle)"),
+        )
+        assertTrue(
+            "no-match path must log and return null",
+            resolverSource.contains("No SIM/telephony account matched") &&
+                resolverSource.contains("return null"),
+        )
+        val selectIdx = resolverSource.indexOf("SimDialAccountLogic.selectSimAccount(")
+        val looksLikeIdx = resolverSource.indexOf(
+            "SimDialAccountLogic.looksLikeTelephony(defaultCandidate)",
+        )
+        assertTrue("selectSimAccount must be present", selectIdx >= 0)
+        assertTrue("looksLikeTelephony fallback must be present", looksLikeIdx >= 0)
+        assertTrue(
+            "default-outgoing looksLikeTelephony fallback must run after selectSimAccount",
+            looksLikeIdx > selectIdx,
+        )
+    }
+
+    @Test
+    fun forceSimDial_livesInAppSettingsPrefs_notRoomMigration() {
+        assertTrue(
+            appSettingsSource.contains("KEY_FORCE_SIM_DIAL = \"force_sim_dial\""),
+        )
+        assertTrue(
+            appSettingsSource.contains("prefs.getBoolean(KEY_FORCE_SIM_DIAL, false)"),
+        )
+        assertTrue(
+            appSettingsSource.contains("prefs.edit().putBoolean(KEY_FORCE_SIM_DIAL, enabled)"),
+        )
+        assertFalse(
+            "forceSimDial must not be introduced via Room migrations",
+            migrationsSource.contains("force_sim_dial") ||
+                migrationsSource.contains("forceSimDial"),
         )
     }
 
@@ -154,8 +296,18 @@ class TestCallAndSimDialWireInTest {
         assertTrue(
             "Place must OR Intent flag with store isTestCall before clear",
             busyDeferReceiverSource.contains("BusyDeferStore.load(appContext, scheduledCallId)") &&
+                busyDeferReceiverSource.contains(
+                    "val treatAsTest = isTestCall || storedIsTestCall",
+                ) &&
                 busyDeferReceiverSource.contains("isTestCall = treatAsTest"),
         )
+        val loadIdx = busyDeferReceiverSource.indexOf(
+            "BusyDeferStore.load(appContext, scheduledCallId)",
+        )
+        val clearIdx = busyDeferReceiverSource.indexOf(
+            "BusyDeferStore.clear(appContext, scheduledCallId)",
+        )
+        assertTrue("load before clear on Place", loadIdx >= 0 && clearIdx > loadIdx)
     }
 
     @Test
@@ -203,6 +355,19 @@ class TestCallAndSimDialWireInTest {
         )
         assertTrue(
             appSource.contains("viewModel.updateCallSettings("),
+        )
+    }
+
+    @Test
+    fun passThroughCallRedirectionService_placesUnmodified() {
+        val serviceSource = resolveSource(
+            "app/src/main/java/com/autocall/app/call/PassThroughCallRedirectionService.kt",
+        ).readText()
+        val manifestSource = resolveSource("app/src/main/AndroidManifest.xml").readText()
+        assertTrue(serviceSource.contains("placeCallUnmodified()"))
+        assertTrue(
+            manifestSource.contains(".call.PassThroughCallRedirectionService") &&
+                manifestSource.contains("android.telecom.CallRedirectionService"),
         )
     }
 

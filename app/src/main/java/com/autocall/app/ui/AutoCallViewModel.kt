@@ -1,9 +1,11 @@
 package com.autocall.app.ui
 
 import android.app.Application
+import android.content.Intent
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.autocall.app.call.CallRedirectionRoleHelper
 import com.autocall.app.data.AppSettings
 import com.autocall.app.data.CallDurationLog
 import com.autocall.app.data.RetrySettings
@@ -37,6 +39,9 @@ data class SystemStatus(
     val canScheduleExactAlarms: Boolean = true,
     val isIgnoringBatteryOptimizations: Boolean = true,
     val canWriteSettings: Boolean = true,
+    val forceSimDialEnabled: Boolean = false,
+    val holdsCallRedirectionRole: Boolean = true,
+    val callRedirectionRoleAvailable: Boolean = false,
 ) {
     val hasAllRuntimePermissions: Boolean
         get() = hasCallPhonePermission &&
@@ -44,6 +49,13 @@ data class SystemStatus(
             hasReadPhoneStatePermission &&
             hasReadContactsPermission &&
             hasNotificationPermission
+
+    /**
+     * Optional fallback only. Primary SIM bypass uses gateway-tagged dials and does not
+     * require holding the call-redirection role (so Google Voice can keep it for other calls).
+     */
+    val needsCallRedirectionRole: Boolean
+        get() = false
 
     val needsAttention: Boolean
         get() = !hasAllRuntimePermissions ||
@@ -110,6 +122,9 @@ class AutoCallViewModel(
             canScheduleExactAlarms = PermissionHelper.canScheduleExactAlarms(context),
             isIgnoringBatteryOptimizations = PermissionHelper.isIgnoringBatteryOptimizations(context),
             canWriteSettings = PermissionHelper.canWriteSettings(context),
+            forceSimDialEnabled = appSettings.isForceSimDial(),
+            holdsCallRedirectionRole = CallRedirectionRoleHelper.holdsCallRedirectionRole(context),
+            callRedirectionRoleAvailable = CallRedirectionRoleHelper.isRoleAvailable(context),
         )
         if (_systemStatus.value.hasAllRuntimePermissions &&
             _systemStatus.value.canScheduleExactAlarms
@@ -222,7 +237,12 @@ class AutoCallViewModel(
         )
         appSettings.setForceSimDial(forceSimDial)
         _forceSimDial.value = forceSimDial
+        refreshSystemStatus()
     }
+
+    /** Intent to make AutoCall the call-redirection app, or null if not needed. */
+    fun callRedirectionRoleRequestIntent(): Intent? =
+        CallRedirectionRoleHelper.createRequestRoleIntent(getApplication())
 }
 
 data class ScheduledCallForm(

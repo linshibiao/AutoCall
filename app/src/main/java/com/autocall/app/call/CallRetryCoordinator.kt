@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.autocall.app.data.AppDatabase
@@ -586,9 +587,17 @@ object CallRetryCoordinator {
     }
 
     fun isLineBusy(context: Context): Boolean {
-        val state = currentCallState(context.applicationContext)
-        return state == TelephonyManager.CALL_STATE_OFFHOOK ||
+        val appContext = context.applicationContext
+        val state = currentCallState(appContext)
+        if (
+            state == TelephonyManager.CALL_STATE_OFFHOOK ||
             state == TelephonyManager.CALL_STATE_RINGING
+        ) {
+            return true
+        }
+        // Google Voice / other self-managed VoIP can be in-call while TelephonyManager
+        // still reports IDLE. Telecom sees managed + self-managed calls.
+        return isTelecomInCall(appContext)
     }
 
     @SuppressLint("MissingPermission")
@@ -599,6 +608,13 @@ object CallRetryCoordinator {
         val telephonyManager =
             context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         return telephonyManager.callState
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun isTelecomInCall(context: Context): Boolean {
+        if (!PermissionHelper.hasReadPhoneStatePermission(context)) return false
+        val telecom = context.getSystemService(TelecomManager::class.java) ?: return false
+        return runCatching { telecom.isInCall }.getOrDefault(false)
     }
 
     private const val TAG = "CallRetryCoordinator"
