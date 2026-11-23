@@ -18,46 +18,79 @@ object SimDialAccountResolver {
             return null
         }
         val telecom = context.getSystemService(TelecomManager::class.java) ?: return null
-        val handles = runCatching { telecom.callCapablePhoneAccounts }.getOrNull().orEmpty()
-        if (handles.isEmpty()) {
-            Log.w(TAG, "No call-capable phone accounts")
-            return null
-        }
-
-        val candidates = handles.mapNotNull { handle ->
-            val account = runCatching { telecom.getPhoneAccount(handle) }.getOrNull()
-                ?: return@mapNotNull null
-            SimDialAccountLogic.AccountCandidate(
-                id = handleId(handle),
-                packageName = handle.componentName.packageName,
-                className = handle.componentName.className,
-                label = account.label?.toString().orEmpty(),
-                isSimSubscription = hasSimSubscriptionCapability(account),
-                isEnabled = account.isEnabled,
-            )
-        }
 
         val defaultOutgoing = runCatching {
-            telecom.getDefaultOutgoingPhoneAccount("tel")
+            telecom.getDefaultOutgoingPhoneAccount(PhoneAccount.SCHEME_TEL)
+        }.onFailure {
+            Log.w(TAG, "getDefaultOutgoingPhoneAccount failed", it)
         }.getOrNull()
 
-        val selected = SimDialAccountLogic.selectSimAccount(
-            candidates = candidates,
-            defaultOutgoingId = defaultOutgoing?.let { handleId(it) },
-        ) ?: run {
-            Log.w(TAG, "No SIM/telephony account matched among ${candidates.size} accounts")
-            return null
+        val handles = runCatching { telecom.callCapablePhoneAccounts }
+            .onFailure { Log.e(TAG, "callCapablePhoneAccounts failed", it) }
+            .getOrNull()
+            .orEmpty()
+
+        val candidates = handles.mapNotNull { handle ->
+            toCandidate(telecom, handle)
         }
 
-        val match = handles.firstOrNull { handleId(it) == selected.id }
-        if (match != null) {
-            Log.i(
-                TAG,
-                "Selected SIM dial account ${selected.packageName}/${selected.className} " +
-                    "label=\"${selected.label}\" simCap=${selected.isSimSubscription}",
-            )
+        val defaultOutgoingId = defaultOutgoing?.let { handleId(it) }
+        val selected = SimDialAccountLogic.selectSimAccount(
+            candidates = candidates,
+            defaultOutgoingId = defaultOutgoingId,
+        )
+
+        if (selected != null) {
+            val match = handles.firstOrNull { handleId(it) == selected.id }
+            if (match != null) {
+                logSelected(selected)
+                return match
+            }
         }
-        return match
+
+        // On some Android builds callCapablePhoneAccounts is empty/filtered for non-dialer
+        // apps even when a SIM account is the default tel outgoing handle. Prefer that.
+        val defaultCandidate = defaultOutgoing?.let { toCandidate(telecom, it) }
+        if (
+            defaultOutgoing != null &&
+            defaultCandidate != null &&
+            SimDialAccountLogic.looksLikeTelephony(defaultCandidate)
+        ) {
+            logSelected(defaultCandidate)
+            return defaultOutgoing
+        }
+
+        Log.w(
+            TAG,
+            "No SIM/telephony account matched " +
+                "(capable=${candidates.size}, default=${defaultCandidate?.packageName})",
+        )
+        return null
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun toCandidate(
+        telecom: TelecomManager,
+        handle: PhoneAccountHandle,
+    ): SimDialAccountLogic.AccountCandidate? {
+        val account = runCatching { telecom.getPhoneAccount(handle) }.getOrNull()
+            ?: return null
+        return SimDialAccountLogic.AccountCandidate(
+            id = handleId(handle),
+            packageName = handle.componentName.packageName,
+            className = handle.componentName.className,
+            label = account.label?.toString().orEmpty(),
+            isSimSubscription = hasSimSubscriptionCapability(account),
+            isEnabled = account.isEnabled,
+        )
+    }
+
+    private fun logSelected(selected: SimDialAccountLogic.AccountCandidate) {
+        Log.i(
+            TAG,
+            "Selected SIM dial account ${selected.packageName}/${selected.className} " +
+                "label=\"${selected.label}\" simCap=${selected.isSimSubscription}",
+        )
     }
 
     private fun hasSimSubscriptionCapability(account: PhoneAccount): Boolean {

@@ -78,6 +78,23 @@ class SimDialAccountLogicTest {
     }
 
     @Test
+    fun looksLikeTelephony_acceptsDefaultOutgoingPhonePackage_forEmptyCapableListFallback() {
+        // Resolver falls back to getDefaultOutgoingPhoneAccount("tel") when
+        // callCapablePhoneAccounts is empty/filtered for non-dialer apps.
+        assertTrue(
+            SimDialAccountLogic.looksLikeTelephony(
+                SimDialAccountLogic.AccountCandidate(
+                    id = "default",
+                    packageName = "com.android.phone",
+                    className = "com.android.services.telephony.TelephonyConnectionService",
+                    label = "Assurance Wireless",
+                    isSimSubscription = true,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun selectSimAccount_ignoresDisabledAccounts() {
         val disabledSim = SimDialAccountLogic.AccountCandidate(
             id = "sim",

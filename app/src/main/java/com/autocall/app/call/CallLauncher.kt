@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 
 object CallLauncher {
@@ -40,6 +41,11 @@ object CallLauncher {
             null
         }
         if (forceSimDial && simHandle == null) {
+            Toast.makeText(
+                context.applicationContext,
+                "SIM dial is on, but no cellular account was found",
+                Toast.LENGTH_LONG,
+            ).show()
             return false
         }
 
@@ -52,21 +58,26 @@ object CallLauncher {
             }
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val telecomManager = context.getSystemService(TelecomManager::class.java)
-            if (telecomManager != null) {
-                telecomManager.placeCall(uri, extras)
-                return true
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val telecomManager = context.getSystemService(TelecomManager::class.java)
+                if (telecomManager != null) {
+                    telecomManager.placeCall(uri, extras)
+                    return true
+                }
             }
-        }
 
-        val callIntent = Intent(Intent.ACTION_CALL, uri).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, useSpeakerphone)
-            putPhoneAccountHandleExtra(this, simHandle)
+            val callIntent = Intent(Intent.ACTION_CALL, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, useSpeakerphone)
+                putPhoneAccountHandleExtra(this, simHandle)
+            }
+            context.startActivity(callIntent)
+            true
+        } catch (error: Exception) {
+            Log.e(TAG, "placeCall failed", error)
+            false
         }
-        context.startActivity(callIntent)
-        return true
     }
 
     private fun putPhoneAccountHandleExtra(intent: Intent, handle: PhoneAccountHandle?) {
